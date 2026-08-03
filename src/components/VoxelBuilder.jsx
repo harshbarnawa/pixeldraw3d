@@ -64,7 +64,8 @@ function cursorFor(tool) {
 
 // Workspace state lives in App; this component drives it.
 // Props: grid, size, setGrid, setSize, extrude, setExtrude,
-//        palette, onAddColor, onRequestSave, onOpenDesigns
+//        randomLift, setRandomLift, palette, onAddColor,
+//        onRequestSave, onOpenDesigns
 function VoxelBuilder({
   grid,
   size,
@@ -72,6 +73,8 @@ function VoxelBuilder({
   setSize,
   extrude,
   setExtrude,
+  randomLift,
+  setRandomLift,
   palette,
   onAddColor,
   onRequestSave,
@@ -259,7 +262,7 @@ function VoxelBuilder({
     <>
       {/* save / designs toolbar */}
       <div className="tool-row">
-        <button className="px-btn" onClick={() => onRequestSave({ grid, size, extrude })}>
+        <button className="px-btn" onClick={() => onRequestSave({ grid, size, extrude, randomLift })}>
           💾 save design
         </button>
         <button className="px-btn px-btn--mint" onClick={onOpenDesigns}>
@@ -413,6 +416,25 @@ function VoxelBuilder({
                   className="px-range"
                 />
               </div>
+
+              <div className="mt-4">
+                <div className="range-caption">
+                  <span className="px-label">Random lift</span>
+                  <span className="px-label">{randomLift}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={6}
+                  value={randomLift}
+                  onChange={(e) => setRandomLift(Number(e.target.value))}
+                  title="Move each column up by a random amount — it only translates, the height slider still decides the cube count"
+                  className="px-range"
+                />
+                <p className="muted" style={{ margin: "6px 0 0", fontSize: 15 }}>
+                  lifts each column up randomly — cube count stays fixed
+                </p>
+              </div>
             </div>
 
             <div className="viewport-wrap mt-4">
@@ -420,6 +442,7 @@ function VoxelBuilder({
                 grid={grid}
                 size={size}
                 extrude={extrude}
+                randomLift={randomLift}
                 showEdges={showEdges}
                 showGrid={showGrid}
                 autoRotate={autoRotate}
@@ -431,11 +454,11 @@ function VoxelBuilder({
               <div className="viewport-tools">
                 <button
                   className="mini-btn"
-                  onClick={() => apiRef.current?.front()}
-                  title="Front view"
-                  aria-label="Front view"
+                  onClick={() => apiRef.current?.top()}
+                  title="Top view"
+                  aria-label="Top view"
                 >
-                  ❐
+                  ⬆
                 </button>
                 <button
                   className={`mini-btn ${showGrid ? "mini-btn--active" : ""}`}

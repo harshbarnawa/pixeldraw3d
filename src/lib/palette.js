@@ -39,10 +39,6 @@ export function nearestColor({ r, g, b }, palette) {
   return best
 }
 
-export function addOffset({ r, g, b }, delta) {
-  return { r: clamp(r + delta), g: clamp(g + delta), b: clamp(b + delta) }
-}
-
 // HSV → RGB. h: 0-360, s: 0-100, v: 0-100
 export function hsvToRgb(h, s, v) {
   s /= 100
@@ -93,26 +89,4 @@ export function rgbToHsv(r, g, b) {
   }
   const sVal = max === 0 ? 0 : d / max
   return { h, s: sVal * 100, v: max * 100 }
-}
-
-// Rich "cube mode" palette covering the whole color gamut —
-// grays + skin/warm tones + a spread of hues across several lightness levels.
-// Makes image→pixel output look like a vivid cube-art sketch.
-export function buildGamutPalette() {
-  const grays = ["#000000", "#2a2a2e", "#54545c", "#8a8a92", "#c0c0c6", "#e7e7ea", "#ffffff"]
-  const warm = ["#ffe2c4", "#ffd0a0", "#e9ab7d", "#cb8a5c", "#a86d4a", "#7d4f31", "#4a2c18"]
-  const hues = [0, 25, 50, 75, 100, 125, 150, 175, 200, 225, 250, 275, 300, 325, 350]
-  const tones = [
-    [95, 90], // vivid bright
-    [78, 62], // mid
-    [62, 35], // dark
-    [45, 95], // pastel
-  ]
-  const colors = [...grays, ...warm]
-  for (const h of hues) {
-    for (const [s, v] of tones) {
-      colors.push(rgbToHex(hsvToRgb(h, s, v)))
-    }
-  }
-  return [...new Set(colors)]
 }

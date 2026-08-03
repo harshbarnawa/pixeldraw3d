@@ -47,6 +47,17 @@ export const PALETTE = [
   "#facc15",
 ]
 
+// Standard 3×3 Rubik's cube colors — used when "Cube mode" is on so the
+// result only ever uses the 6 sticker colors
+export const RUBIKS_PALETTE = [
+  "#ffffff", // white
+  "#ffd500", // yellow
+  "#c41e3a", // red
+  "#ff5800", // orange
+  "#0051ba", // blue
+  "#009e60", // green
+]
+
 // Sample designs — X marks a filled pixel (ported from the portfolio builder)
 export const PRESETS = [
   {

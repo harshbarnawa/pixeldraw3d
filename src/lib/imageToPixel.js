@@ -93,11 +93,12 @@ export function convertToGrid({ img, size, snap = true, palette = PALETTE, dithe
   target.height = size
   const tctx = target.getContext("2d", { willReadFrequently: true })
   const mid = stepDown(img, size)
-  // Contain-fit: keep the image's aspect ratio, centered, so tall/wide
-  // images don't get squashed onto the square grid.
+  // Cover-fit: scale the image so it always fills the whole square grid,
+  // cropping the overflow evenly. Every result is full-bleed — no weird
+  // letterbox margins, and the picture's on-grid size stays fixed.
   const mw = mid.width
   const mh = mid.height
-  const scale = Math.min(size / mw, size / mh)
+  const scale = Math.max(size / mw, size / mh)
   const dw = mw * scale
   const dh = mh * scale
   const dx = (size - dw) / 2
@@ -163,13 +164,17 @@ export function renderGridToCanvas(canvas, grid) {
   const ctx = canvas.getContext("2d")
   const cw = canvas.width
   ctx.clearRect(0, 0, cw, cw)
+  // Exact cell geometry — no overlap, no clipped overflow — so the preview
+  // stays crisp and the same fixed size for every grid resolution.
   const cellPx = cw / size
   for (let r = 0; r < size; r++) {
+    const y0 = Math.round(r * cellPx)
+    const y1 = Math.round((r + 1) * cellPx)
     for (let c = 0; c < size; c++) {
       const hex = grid[r][c]
       if (!hex) continue
       ctx.fillStyle = hex
-      ctx.fillRect(Math.floor(c * cellPx), Math.floor(r * cellPx), Math.ceil(cellPx) + 1, Math.ceil(cellPx) + 1)
+      ctx.fillRect(Math.round(c * cellPx), y0, Math.round((c + 1) * cellPx) - Math.round(c * cellPx), y1 - y0)
     }
   }
 }

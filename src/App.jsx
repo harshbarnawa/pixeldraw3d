@@ -37,6 +37,7 @@ function App() {
     () => saved?.grid ?? (DEFAULT_PRESET ? presetToGrid(DEFAULT_PRESET) : emptyGrid(DEFAULT_SIZE)),
   )
   const [extrude, setExtrude] = useState(saved?.extrude ?? 2)
+  const [randomLift, setRandomLift] = useState(saved?.randomLift ?? 0)
 
   // ----- design library + custom colors -----
   const [designs, setDesigns] = useState(loadDesigns)
@@ -54,9 +55,9 @@ function App() {
 
   // auto-save workspace for crash recovery
   useEffect(() => {
-    const t = setTimeout(() => saveWorkspace({ grid, gridSize, extrude }), 300)
+    const t = setTimeout(() => saveWorkspace({ grid, gridSize, extrude, randomLift }), 300)
     return () => clearTimeout(t)
-  }, [grid, gridSize, extrude])
+  }, [grid, gridSize, extrude, randomLift])
 
   const updateDesigns = (next) => {
     setDesigns(next)
@@ -75,7 +76,7 @@ function App() {
     showToast(`added ${hex}`)
   }
 
-  const handleRequestSave = ({ grid: g, size, extrude: ex }) => {
+  const handleRequestSave = ({ grid: g, size, extrude: ex, randomLift: rl }) => {
     const now = new Date().toISOString()
     const design = {
       id: createId(),
@@ -83,6 +84,7 @@ function App() {
       grid: g,
       size,
       extrude: ex,
+      randomLift: rl,
       createdAt: now,
       updatedAt: now,
     }
@@ -94,6 +96,7 @@ function App() {
     setGrid(design.grid)
     setGridSize(design.size)
     setExtrude(design.extrude ?? 2)
+    setRandomLift(design.randomLift ?? design.randomHeight ?? 0)
     scrollTo("editor")
     showToast(`loaded “${design.name}”`)
   }
@@ -171,6 +174,8 @@ function App() {
             setSize={setGridSize}
             extrude={extrude}
             setExtrude={setExtrude}
+            randomLift={randomLift}
+            setRandomLift={setRandomLift}
             palette={palette}
             onAddColor={handleAddColor}
             onRequestSave={handleRequestSave}

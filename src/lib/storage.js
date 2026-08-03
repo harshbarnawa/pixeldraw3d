@@ -10,9 +10,15 @@ export function loadWorkspace() {
   try {
     const raw = localStorage.getItem(WORKSPACE_KEY)
     if (!raw) return null
-    const { grid, size, extrude } = JSON.parse(raw)
+    const { grid, size, extrude, randomLift, randomHeight } = JSON.parse(raw)
     if (Array.isArray(grid) && grid.length === size && size >= 5) {
-      return { grid, size, extrude: typeof extrude === "number" ? extrude : 2 }
+      return {
+        grid,
+        size,
+        extrude: typeof extrude === "number" ? extrude : 2,
+        randomLift:
+          typeof randomLift === "number" ? randomLift : typeof randomHeight === "number" ? randomHeight : 0,
+      }
     }
   } catch {
     // corrupted state — ignore
@@ -20,9 +26,9 @@ export function loadWorkspace() {
   return null
 }
 
-export function saveWorkspace({ grid, size, extrude }) {
+export function saveWorkspace({ grid, size, extrude, randomLift }) {
   try {
-    localStorage.setItem(WORKSPACE_KEY, JSON.stringify({ grid, size, extrude }))
+    localStorage.setItem(WORKSPACE_KEY, JSON.stringify({ grid, size, extrude, randomLift }))
   } catch {
     // storage may be unavailable
   }

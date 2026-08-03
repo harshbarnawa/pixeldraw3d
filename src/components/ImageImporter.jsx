@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react"
-import { PALETTE } from "../constants.js"
+import { useEffect, useRef, useState } from "react"
+import { PALETTE, RUBIKS_PALETTE } from "../constants.js"
 import { convertToGrid, fileToImage, renderGridToCanvas } from "../lib/imageToPixel.js"
-import { buildGamutPalette } from "../lib/palette.js"
 
 const PREVIEW_PX = 320
 
@@ -12,9 +11,7 @@ function ImageImporter({ onApply, palette = PALETTE }) {
   const [gridSize, setGridSize] = useState(32)
   const [snap, setSnap] = useState(true)
   const [cubeMode, setCubeMode] = useState(false)
-  const [alphaThreshold, setAlphaThreshold] = useState(128)
-  const gamutPalette = useMemo(() => buildGamutPalette(), [])
-  const snapPalette = cubeMode ? gamutPalette : palette
+  const snapPalette = cubeMode ? RUBIKS_PALETTE : palette
   const [dragOver, setDragOver] = useState(false)
   const [error, setError] = useState(null)
 
@@ -56,8 +53,8 @@ function ImageImporter({ onApply, palette = PALETTE }) {
       setResult(null)
       return
     }
-    setResult(convertToGrid({ img, size: gridSize, snap, palette: snapPalette, dither: "none", alphaThreshold }))
-  }, [img, gridSize, snap, snapPalette, alphaThreshold])
+    setResult(convertToGrid({ img, size: gridSize, snap, palette: snapPalette, dither: "none" }))
+  }, [img, gridSize, snap, snapPalette])
 
   // Cube mode uses the full-gamut palette; turning it on implies snapping
   const toggleCube = () => {
@@ -149,11 +146,11 @@ function ImageImporter({ onApply, palette = PALETTE }) {
 
           <div className="opt-row">
             <span className="px-label">
-              <span style={{ marginRight: 6 }}>🎲</span>Cube mode — vivid cube-art colors
+              <span style={{ marginRight: 6 }}>🎲</span>Cube mode — Rubik's cube colors
             </span>
             <button
               onClick={toggleCube}
-              title="Use the full color gamut so the result looks like a cube-art sketch"
+              title="Snap colors to the 6 standard 3×3 Rubik's cube colors"
               className={`px-btn px-btn--sm ${cubeMode ? "px-btn--active" : "px-btn--white"}`}
             >
               {cubeMode ? "on" : "off"}
@@ -169,21 +166,6 @@ function ImageImporter({ onApply, palette = PALETTE }) {
             >
               {snap ? "on" : "off"}
             </button>
-          </div>
-
-          <div>
-            <div className="range-caption">
-              <span className="px-label">Transparency cut</span>
-              <span className="px-label">{alphaThreshold}</span>
-            </div>
-            <input
-              type="range"
-              min={0}
-              max={255}
-              value={alphaThreshold}
-              onChange={(e) => setAlphaThreshold(Number(e.target.value))}
-              className="px-range"
-            />
           </div>
         </div>
 
