@@ -22,14 +22,11 @@ const EDGE_COLOR = "#4a3b5c"
 const GRID_CENTER = "#d6c8f2"
 const GRID_LINE = "#eee6ff"
 
-// Default 3/4 view — exactly the original app camera. Object clearly visible.
+// Default 3/4 view — exactly the original app camera.
 const DEFAULT_CAMERA_POSITION = [13, 9, 13]
-const ORIGIN = new THREE.Vector3(0, 0, 0)
 
-// Exposes an api to the parent:
-//   capture()  saves a PNG of the current view
-//   reset()    returns to the default 3D view
-//   top()      keeps the current zoom and looks straight down from above
+// Exposes an api to the parent: capture() saves a PNG, reset() returns to the
+// default 3D framing. Movement is free orbit in every direction.
 function ViewportApi({ apiRef, controlsRef, fileName }) {
   const { gl, scene, camera } = useThree()
 
@@ -45,15 +42,6 @@ function ViewportApi({ apiRef, controlsRef, fileName }) {
       },
       reset: () => {
         camera.position.set(...DEFAULT_CAMERA_POSITION)
-        controlsRef.current?.target.set(0, 0, 0)
-        controlsRef.current?.update()
-      },
-      top: () => {
-        // Preserve the current zoom (distance to target) and look straight
-        // down — the object stays exactly as big as it currently is.
-        const target = controlsRef.current?.target ?? ORIGIN
-        const dist = camera.position.distanceTo(target)
-        camera.position.set(0, dist, 0.0001)
         controlsRef.current?.target.set(0, 0, 0)
         controlsRef.current?.update()
       },

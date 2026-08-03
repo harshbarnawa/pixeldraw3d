@@ -461,14 +461,6 @@ function VoxelBuilder({
                   ⌖
                 </button>
                 <button
-                  className="mini-btn"
-                  onClick={() => apiRef.current?.top()}
-                  title="Toggle flat 2D top view"
-                  aria-label="Top view"
-                >
-                  ⬆
-                </button>
-                <button
                   className={`mini-btn ${showGrid ? "mini-btn--active" : ""}`}
                   onClick={() => setShowGrid((v) => !v)}
                   title="Toggle grid"
