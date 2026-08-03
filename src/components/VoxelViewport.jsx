@@ -1,22 +1,13 @@
-import { useLayoutEffect, useEffect, useMemo, useRef } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react"
 import { Canvas, useThree } from "@react-three/fiber"
 import { OrbitControls } from "@react-three/drei"
 import * as THREE from "three"
 
-// Hard ceiling for how many cubes a single pixel column can hold
-// (the height slider is the only thing that changes the count)
+// Max cubes a single pixel column can hold (height slider ceiling; the random
+// lift only translates columns, it never adds cubes)
 const MAX_STACK = 6
 
-// Frame the whole grid in view: distance grows with grid size so large
-// slates stay fully visible without the user having to zoom out by hand.
-const fitDistance = (size) => size * 1.5 + 14
-
-function defaultCamera(size) {
-  const d = fitDistance(size)
-  return [d * 0.68, d * 0.5, d * 0.68]
-}
-
-// Deterministic per-cell pseudo-random so random heights stay stable for a
+// Deterministic per-cell pseudo-random so random lifts stay stable for a
 // given (row, col, slider) and don't flicker between renders.
 function randomUnit(r, c, salt) {
   let h = (r * 374761393 + c * 668265263 + salt * 2654435761) | 0
@@ -31,9 +22,15 @@ const EDGE_COLOR = "#4a3b5c"
 const GRID_CENTER = "#d6c8f2"
 const GRID_LINE = "#eee6ff"
 
-// Exposes an api to the parent: capture() renders a PNG, reset() reframes
-// the whole grid, top() looks straight down so the image reads as a flat sprite.
-function ViewportApi({ apiRef, controlsRef, fileName, size }) {
+// Default 3/4 view — exactly the original app camera. Object clearly visible.
+const DEFAULT_CAMERA_POSITION = [13, 9, 13]
+const ORIGIN = new THREE.Vector3(0, 0, 0)
+
+// Exposes an api to the parent:
+//   capture()  saves a PNG of the current view
+//   reset()    returns to the default 3D view
+//   top()      keeps the current zoom and looks straight down from above
+function ViewportApi({ apiRef, controlsRef, fileName }) {
   const { gl, scene, camera } = useThree()
 
   useEffect(() => {
@@ -47,15 +44,16 @@ function ViewportApi({ apiRef, controlsRef, fileName, size }) {
         a.click()
       },
       reset: () => {
-        camera.position.set(...defaultCamera(size))
+        camera.position.set(...DEFAULT_CAMERA_POSITION)
         controlsRef.current?.target.set(0, 0, 0)
         controlsRef.current?.update()
       },
-      // Straight-on top view so the pixel image shows flat; the random-height
-      // columns only peek out when you look from the sides.
       top: () => {
-        const y = size * 1.6 + 8
-        camera.position.set(0.001, y, 0.001)
+        // Preserve the current zoom (distance to target) and look straight
+        // down — the object stays exactly as big as it currently is.
+        const target = controlsRef.current?.target ?? ORIGIN
+        const dist = camera.position.distanceTo(target)
+        camera.position.set(0, dist, 0.0001)
         controlsRef.current?.target.set(0, 0, 0)
         controlsRef.current?.update()
       },
@@ -63,7 +61,7 @@ function ViewportApi({ apiRef, controlsRef, fileName, size }) {
     return () => {
       apiRef.current = null
     }
-  }, [gl, scene, camera, apiRef, controlsRef, fileName, size])
+  }, [gl, scene, camera, apiRef, controlsRef, fileName])
 
   return null
 }
@@ -73,11 +71,8 @@ function VoxelMesh({ grid, size, extrude, randomLift, showEdges }) {
   const dummy = useMemo(() => new THREE.Object3D(), [])
   const scratch = useMemo(() => new THREE.Color(), [])
 
-  // Flatten the 2D slate into positioned cubes. The height slider decides how
-  // many cubes a column has (extrude). The random lift only TRANSLATES each
-  // column up by a random amount (deterministic per cell) — it never adds or
-  // removes cubes. Top view still shows the flat image; the sides show columns
-  // floating at different heights.
+  // Flatten the 2D slate into positioned cubes. Height slider decides how many
+  // cubes a column has (extrude); random lift only translates the column up.
   const instances = useMemo(() => {
     const list = []
     const offset = (size - 1) / 2
@@ -102,7 +97,6 @@ function VoxelMesh({ grid, size, extrude, randomLift, showEdges }) {
 
   const maxInstances = size * size * MAX_STACK
 
-  // Sync matrices + per-instance colors whenever the grid changes (realtime)
   useLayoutEffect(() => {
     const mesh = meshRef.current
     if (!mesh) return
@@ -145,7 +139,6 @@ function VoxelMesh({ grid, size, extrude, randomLift, showEdges }) {
     return geo
   }, [instances, showEdges])
 
-  // Free the replaced edge geometry when it changes/unmounts
   useEffect(() => {
     return () => edgeGeometry && edgeGeometry.dispose()
   }, [edgeGeometry])
@@ -167,28 +160,28 @@ function VoxelMesh({ grid, size, extrude, randomLift, showEdges }) {
 
 function VoxelViewport({ grid, size, extrude, randomLift, showEdges, showGrid = true, autoRotate, apiRef, fileName }) {
   const controlsRef = useRef(null)
-  const cameraPosition = useMemo(() => defaultCamera(size), [size])
 
   return (
-    <Canvas camera={{ position: cameraPosition, fov: 45 }} gl={{ antialias: true }} dpr={[1, 2]}>
+    <Canvas camera={{ position: DEFAULT_CAMERA_POSITION, fov: 45 }} gl={{ antialias: true }} dpr={[1, 2]}>
       <color attach="background" args={[VIEW_BG]} />
       <ambientLight intensity={0.6} />
       <directionalLight position={[12, 14, 8]} intensity={1.6} />
       <directionalLight position={[-8, -4, -10]} intensity={0.4} />
       {showGrid && <gridHelper args={[size, size, GRID_CENTER, GRID_LINE]} position={[0, 0, 0]} />}
       <VoxelMesh grid={grid} size={size} extrude={extrude} randomLift={randomLift} showEdges={showEdges} />
+
       <OrbitControls
         ref={controlsRef}
         makeDefault
-        enablePan={false}
         enableDamping
         dampingFactor={0.08}
         autoRotate={autoRotate}
         autoRotateSpeed={2.5}
         minDistance={5}
-        maxDistance={200}
+        maxDistance={50}
       />
-      <ViewportApi apiRef={apiRef} controlsRef={controlsRef} fileName={fileName} size={size} />
+
+      <ViewportApi apiRef={apiRef} controlsRef={controlsRef} fileName={fileName} />
     </Canvas>
   )
 }

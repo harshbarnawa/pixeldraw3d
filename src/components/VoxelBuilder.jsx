@@ -425,10 +425,10 @@ function VoxelBuilder({
                 <input
                   type="range"
                   min={0}
-                  max={6}
+                  max={20}
                   value={randomLift}
                   onChange={(e) => setRandomLift(Number(e.target.value))}
-                  title="Move each column up by a random amount — it only translates, the height slider still decides the cube count"
+                  title="Move each column up by a random amount (0–20) — it only translates, the height slider still decides the cube count"
                   className="px-range"
                 />
                 <p className="muted" style={{ margin: "6px 0 0", fontSize: 15 }}>
@@ -454,8 +454,16 @@ function VoxelBuilder({
               <div className="viewport-tools">
                 <button
                   className="mini-btn"
+                  onClick={() => apiRef.current?.reset()}
+                  title="Reset camera to default view"
+                  aria-label="Reset camera"
+                >
+                  ⌖
+                </button>
+                <button
+                  className="mini-btn"
                   onClick={() => apiRef.current?.top()}
-                  title="Top view"
+                  title="Toggle flat 2D top view"
                   aria-label="Top view"
                 >
                   ⬆
@@ -483,14 +491,6 @@ function VoxelBuilder({
                   aria-label="Auto-rotate"
                 >
                   ⟳
-                </button>
-                <button
-                  className="mini-btn"
-                  onClick={() => apiRef.current?.reset()}
-                  title="Reset camera"
-                  aria-label="Reset camera"
-                >
-                  ⌖
                 </button>
               </div>
 
