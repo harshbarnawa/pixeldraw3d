@@ -44,15 +44,21 @@ declare
   base      text;
   candidate text;
 begin
-  -- strip the google name down to url-safe characters, lowercased
+  -- Google stores the name under both `name` and `full_name`; fall back to
+  -- email, then a plain "user", so base can never end up null.
   base := lower(
     regexp_replace(
-      coalesce(nullif(btrim(new.raw_user_meta_data ->> 'full_name'), ''), new.email),
+      coalesce(
+        nullif(btrim(new.raw_user_meta_data ->> 'name'), ''),
+        nullif(btrim(new.raw_user_meta_data ->> 'full_name'), ''),
+        new.email,
+        'user'
+      ),
       '[^a-z0-9]+', '_', 'g'
     )
   );
   base := substr(base, 1, 24);
-  if base in ('', '_', 'user', 'null') then
+  if base is null or base in ('', '_', 'user', 'null') then
     base := 'user';
   end if;
 
@@ -62,18 +68,24 @@ begin
     exit when not exists (select 1 from public.profiles where username = candidate);
   end loop;
 
-  insert into public.profiles (
-    id, full_name, display_name, username, email, profile_photo, provider
-  )
-  values (
-    new.id,
-    coalesce(new.raw_user_meta_data ->> 'full_name', ''),
-    coalesce(new.raw_user_meta_data ->> 'full_name', ''),
-    candidate,
-    new.email,
-    new.raw_user_meta_data ->> 'avatar_url',
-    coalesce(new.app_metadata ->> 'provider', 'google')
-  );
+  -- A profile problem must never block signup: log and move on. The app falls
+  -- back to a local minimal profile when the row is missing.
+  begin
+    insert into public.profiles (
+      id, full_name, display_name, username, email, profile_photo, provider
+    )
+    values (
+      new.id,
+      coalesce(new.raw_user_meta_data ->> 'name', new.raw_user_meta_data ->> 'full_name', ''),
+      coalesce(new.raw_user_meta_data ->> 'name', new.raw_user_meta_data ->> 'full_name', ''),
+      candidate,
+      new.email,
+      coalesce(new.raw_user_meta_data ->> 'avatar_url', new.raw_user_meta_data ->> 'picture', ''),
+      coalesce(new.app_metadata ->> 'provider', 'google')
+    );
+  exception when others then
+    raise log 'handle_new_user: profile insert failed for %: %', new.id, sqlerrm;
+  end;
 
   return new;
 end;
