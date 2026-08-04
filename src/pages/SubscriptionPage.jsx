@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import PageShell from "../components/PageShell.jsx"
 import SectionHead from "../components/SectionHead.jsx"
 import RequireAuth from "../components/RequireAuth.jsx"
 import PlanBadge from "../components/PlanBadge.jsx"
 import { useToast } from "../components/useToast.js"
 import { useAuth } from "../context/AuthContext.jsx"
+import { cancelSubscription, fetchBilling, startCheckout } from "../lib/razorpay.js"
 import { FEATURE, FEATURE_MATRIX, PLAN, PLAN_META, QUOTAS, getUserPlan, planTier } from "../lib/plans.js"
 
 // Billing cycles. Yearly + lifetime are UI structure only until the payments
@@ -72,26 +73,62 @@ const fmtDate = (d) =>
   d ? new Date(d).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "—"
 
 export default function SubscriptionPage() {
-  const { profile } = useAuth()
+  const { profile, user, refreshProfile } = useAuth()
   const { showToast } = useToast()
   const [cycle, setCycle] = useState("monthly")
+  const [busyPlan, setBusyPlan] = useState(null)
+  const [billing, setBilling] = useState({ payments: [], invoices: [] })
 
   const plan = getUserPlan(profile)
   const tier = planTier(plan)
   const status = String(profile?.subscription_status ?? "NONE").toUpperCase()
   const statusMeta = STATUS_META[status] ?? STATUS_META.NONE
 
-  // UI-only: no payments provider yet, so dates are best-effort placeholders.
-  const nextBilling = useMemo(() => {
-    if (status !== "ACTIVE") return null
-    const base = profile?.updated_at ? new Date(profile.updated_at) : new Date()
-    if (Number.isNaN(base.getTime())) return null
-    const d = new Date(base)
-    d.setMonth(d.getMonth() + 1)
-    return d
-  }, [status, profile?.updated_at])
+  // Real dates once a payment lands (edge function writes these).
+  const nextBilling = profile?.next_billing_date
+  const expiryDate = profile?.subscription_expires_at
 
-  const comingSoon = () => showToast("payments land in a future phase — plan stays FREE for now")
+  const loadBilling = useCallback(async () => {
+    if (!user) return
+    setBilling(await fetchBilling(user.id))
+  }, [user])
+
+  useEffect(() => {
+    loadBilling()
+  }, [loadBilling])
+
+  const handleCheckout = async (target, cyc = "monthly") => {
+    setBusyPlan(target)
+    try {
+      const res = await startCheckout({
+        plan: target,
+        cycle: cyc,
+        refreshProfile,
+        onActivated: () => {},
+      })
+      if (res.status === "paid") {
+        showToast(`welcome to ${PLAN_META[target].label} 🎉`)
+        loadBilling()
+      } else if (res.status === "error") {
+        showToast(typeof res.data === "string" ? res.data : "payment didn't go through")
+      }
+      // "dismissed" → silently ignore
+    } catch (e) {
+      showToast(e.message)
+    } finally {
+      setBusyPlan(null)
+    }
+  }
+
+  const handleCancel = async () => {
+    try {
+      await cancelSubscription()
+      refreshProfile()
+      showToast("subscription cancelled — access stays until it expires")
+    } catch (e) {
+      showToast(e.message)
+    }
+  }
 
   const cellFor = (row, p) => {
     if (row.kind === "quota") {
@@ -126,25 +163,35 @@ export default function SubscriptionPage() {
               </div>
               <div className="sub-actions">
                 {plan === PLAN.FREE ? (
-                  <button type="button" className="px-btn px-btn--mint" onClick={comingSoon}>
-                    ↑ upgrade
+                  <button
+                    type="button"
+                    className="px-btn px-btn--mint"
+                    disabled={busyPlan === PLAN.PLUS}
+                    onClick={() => handleCheckout(PLAN.PLUS)}
+                  >
+                    {busyPlan === PLAN.PLUS ? "opening…" : "↑ upgrade"}
                   </button>
                 ) : status === "ACTIVE" ? (
-                  <>
-                    <button type="button" className="px-btn px-btn--white" onClick={comingSoon}>
-                      ↓ downgrade
-                    </button>
-                    <button type="button" className="px-btn px-btn--white" onClick={comingSoon}>
-                      ✕ cancel subscription
-                    </button>
-                  </>
+                  <button type="button" className="px-btn px-btn--white" onClick={handleCancel}>
+                    ✕ cancel subscription
+                  </button>
                 ) : status === "CANCELLED" ? (
-                  <button type="button" className="px-btn px-btn--mint" onClick={comingSoon}>
-                    ↻ renew
+                  <button
+                    type="button"
+                    className="px-btn px-btn--mint"
+                    disabled={busyPlan === plan}
+                    onClick={() => handleCheckout(plan)}
+                  >
+                    {busyPlan === plan ? "opening…" : "↻ renew"}
                   </button>
                 ) : (
-                  <button type="button" className="px-btn px-btn--mint" onClick={comingSoon}>
-                    ↑ upgrade
+                  <button
+                    type="button"
+                    className="px-btn px-btn--mint"
+                    disabled={busyPlan === PLAN.PLUS}
+                    onClick={() => handleCheckout(PLAN.PLUS)}
+                  >
+                    {busyPlan === PLAN.PLUS ? "opening…" : "↑ upgrade"}
                   </button>
                 )}
               </div>
@@ -161,7 +208,7 @@ export default function SubscriptionPage() {
               </div>
               <div className="sub-fact">
                 <span className="px-label">expiry date</span>
-                <span>{fmtDate(null)}</span>
+                <span>{fmtDate(expiryDate)}</span>
               </div>
               <div className="sub-fact">
                 <span className="px-label">member since</span>
@@ -216,10 +263,20 @@ export default function SubscriptionPage() {
                   <button
                     type="button"
                     className={`px-btn ${isCurrent || isSoon ? "px-btn--white" : "px-btn--mint"}`}
-                    disabled={isCurrent}
-                    onClick={comingSoon}
+                    disabled={isCurrent || busyPlan === p}
+                    onClick={() => {
+                      if (isSoon) {
+                        showToast("yearly & lifetime land in a future phase")
+                        return
+                      }
+                      if (planTier(p) < tier) {
+                        handleCancel()
+                        return
+                      }
+                      handleCheckout(p)
+                    }}
                   >
-                    {ctaLabel}
+                    {busyPlan === p ? "opening…" : ctaLabel}
                   </button>
                 </div>
               )
@@ -231,12 +288,25 @@ export default function SubscriptionPage() {
             <h3 className="px-panel-title">
               <span>billing history</span>
             </h3>
-            <div className="billing-empty">
-              <p style={{ fontSize: 30, margin: 0 }}>🧾</p>
-              <p className="muted" style={{ margin: "6px 0 0" }}>
-                no transactions yet — your payment history appears here once billing goes live.
-              </p>
-            </div>
+            {billing.payments.length === 0 ? (
+              <div className="billing-empty">
+                <p style={{ fontSize: 30, margin: 0 }}>🧾</p>
+                <p className="muted" style={{ margin: "6px 0 0" }}>no transactions yet.</p>
+              </div>
+            ) : (
+              <ul className="billing-list">
+                {billing.payments.map((p) => (
+                  <li key={p.id}>
+                    <span className="billing-plan">
+                      {p.plan} · {p.cycle}
+                    </span>
+                    <span className="billing-amount">₹{(p.amount / 100).toFixed(0)}</span>
+                    <span className={`billing-status billing-status--${p.status}`}>{p.status}</span>
+                    <span className="muted billing-date">{fmtDate(p.verified_at ?? p.created_at)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
           {/* ----- feature comparison ----- */}
