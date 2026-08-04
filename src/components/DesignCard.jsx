@@ -31,7 +31,7 @@ function downloadDesign(design) {
 
 // Design tile with load / rename / dup / versions / export / delete.
 // onOpenVersions is optional — pass it to show the cloud version-history button.
-export default function DesignCard({ design, onLoad, onRename, onDuplicate, onDelete, onOpenVersions }) {
+export default function DesignCard({ design, onLoad, onRename, onDuplicate, onDelete, onOpenVersions, onTogglePublic }) {
   const canvasRef = useRef(null)
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(design.name)
@@ -103,6 +103,15 @@ export default function DesignCard({ design, onLoad, onRename, onDuplicate, onDe
           <button className="px-btn px-btn--sm px-btn--white" onClick={() => downloadDesign(design)}>
             ⤓
           </button>
+          {onTogglePublic && design.isPublic !== undefined && (
+            <button
+              className={`px-btn px-btn--sm ${design.isPublic ? "px-btn--mint" : "px-btn--white"}`}
+              title={design.isPublic ? "shared with the community" : "only you can see this"}
+              onClick={() => onTogglePublic(design)}
+            >
+              {design.isPublic ? "public ✓" : "private"}
+            </button>
+          )}
           <button className="px-btn px-btn--sm px-btn--peach" onClick={() => onDelete(design.id)}>
             ✕
           </button>

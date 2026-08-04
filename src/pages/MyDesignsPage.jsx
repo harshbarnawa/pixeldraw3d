@@ -12,6 +12,7 @@ import { useToast } from "../components/useToast.js"
 import { useDesigns } from "../context/DesignsContext.jsx"
 import { useAuth } from "../context/AuthContext.jsx"
 import { saveWorkspace } from "../lib/storage.js"
+import { setDesignPublic } from "../lib/cloudDesigns.js"
 
 const SORTS = {
   recent: (a, b) => String(b.updatedAt ?? "").localeCompare(String(a.updatedAt ?? "")),
@@ -39,6 +40,7 @@ function MyDesignsInner() {
   const [sort, setSort] = useState("recent")
   const [showUpgrade, setShowUpgrade] = useState(false)
   const [versionsFor, setVersionsFor] = useState(null)
+  const [publicOverride, setPublicOverride] = useState({})
   const { toast, showToast } = useToast()
 
   const visible = useMemo(() => {
@@ -79,6 +81,20 @@ function MyDesignsInner() {
 
   const handleRestored = (design) => {
     showToast(`restored “${design.name}”`)
+  }
+
+  // Publish toggle: flips is_public optimistically (only the owner may call
+  // setDesignPublic — RLS enforces it server-side).
+  const handleTogglePublic = async (design) => {
+    const next = !design.isPublic
+    setPublicOverride((o) => ({ ...o, [design.id]: next }))
+    try {
+      await setDesignPublic(design.id, next)
+      showToast(next ? "shared to the community ✨" : "set to private")
+    } catch (e) {
+      setPublicOverride((o) => ({ ...o, [design.id]: !next }))
+      showToast(e.message)
+    }
   }
 
   return (
@@ -125,12 +141,13 @@ function MyDesignsInner() {
             {visible.map((d) => (
               <DesignCard
                 key={d.id}
-                design={d}
+                design={{ ...d, isPublic: publicOverride[d.id] ?? d.isPublic }}
                 onLoad={handleLoad}
                 onRename={handleRename}
                 onDuplicate={handleDuplicate}
                 onDelete={handleDelete}
                 onOpenVersions={isCloud ? (design) => setVersionsFor(design) : undefined}
+                onTogglePublic={isCloud ? handleTogglePublic : undefined}
               />
             ))}
           </div>
