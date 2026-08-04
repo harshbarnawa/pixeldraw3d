@@ -93,8 +93,10 @@ const QUOTAS = {
   imageImportsPerDay: { [PLAN.FREE]: 2, [PLAN.PLUS]: 10, [PLAN.PRO]: Infinity },
 }
 
-// The auth user object is `null` for guests.
-export const getUserPlan = (user) => user?.currentPlan ?? PLAN.FREE
+// The auth user object is `null` for guests. Accepts either the auth user's
+// camelCase metadata (currentPlan) or the DB profile's snake_case column
+// (current_plan).
+export const getUserPlan = (user) => user?.currentPlan ?? user?.current_plan ?? PLAN.FREE
 
 export function isFree(user) {
   return getUserPlan(user) === PLAN.FREE

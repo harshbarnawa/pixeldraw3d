@@ -1307,9 +1307,11 @@ textarea {
 
 .page-toolbar .search-box {
   flex: 1;
+  width: auto;
   min-width: 200px;
 }
 
 .page-toolbar .sort-select {
+  width: auto;
   min-width: 150px;
 }
