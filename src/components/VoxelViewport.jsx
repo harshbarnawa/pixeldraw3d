@@ -22,13 +22,69 @@ const EDGE_COLOR = "#4a3b5c"
 const GRID_CENTER = "#d6c8f2"
 const GRID_LINE = "#eee6ff"
 
-// Default 3/4 view — exactly the original app camera.
-const DEFAULT_CAMERA_POSITION = [600, 550, 650]
+// Camera tuned for a 10×10 grid: FOV 1° telephoto from a fixed 3/4 angle. Both
+// FOV and distance are pure functions of grid size, so the 10×10 view is
+// reproduced exactly while every larger grid is framed the same way — whole
+// model visible, model filling the same portion of the viewport, no manual
+// zoom. (The rendered 10×10 view sits at distance 800: the [600,550,650] start
+// position was always pulled in to maxDistance=800 by OrbitControls.)
+const BASE_GRID_SIZE = 10
+const BASE_CAMERA_POSITION = [600, 550, 650]
+const BASE_CAMERA_DISTANCE = Math.hypot(...BASE_CAMERA_POSITION) // ≈1041.6 — length of the view direction
+const BASE_FOV = 1 // degrees — exact reference look for 10×10
+const REF_DISTANCE = 800 // effective framing distance for 10×10 (=== BASE_MAX_DISTANCE)
+const BASE_MIN_DISTANCE = 5
+const BASE_MAX_DISTANCE = 800
+const NEAR_PLANE = 0.1
+const FAR_PLANE = BASE_MAX_DISTANCE * 2
+const MAX_FOV = 90 // degrees — smooth ceiling for very large grids
+const SAFETY_MARGIN = 0.2 // extra view margin so wide-FOV perspective never crops near corners
+
+// FOV widens quickly with grid size: it grows like (size/10)^2 near the
+// reference (1° at 10×10, ~24° at 50×50, ~72° at 100×100) and levels off near
+// MAX_FOV so 1000×1000 grids don't go fisheye. tanh is smooth and saturating —
+// a continuous curve, no jumps, no lookup tables.
+function adaptiveFov(size) {
+  const s = size / BASE_GRID_SIZE
+  return MAX_FOV * Math.tanh(Math.pow(s, 2) / MAX_FOV)
+}
+
+// Framing distance for a grid size. A perspective camera sees a vertical slice
+// of height 2·D·tan(FOV/2) at its target; keeping that height a fixed multiple
+// of the grid size makes every grid fill the viewport identically:
+//   D(S) = REF_DISTANCE · (S/10)^(1+SAFETY_MARGIN) · tan(0.5°) / tan(FOV(S)/2)
+// At 10×10 both the size and FOV factors are 1, so D = REF_DISTANCE (the tuned
+// view). As FOV grows, the needed distance actually stays modest — the wider
+// frustum does the work, which is what keeps huge models fully on screen.
+function framingDistance(size) {
+  const baseHalf = Math.tan(THREE.MathUtils.degToRad(BASE_FOV / 2))
+  const fovHalf = Math.tan(THREE.MathUtils.degToRad(adaptiveFov(size) / 2))
+  return REF_DISTANCE * Math.pow(size / BASE_GRID_SIZE, 1 + SAFETY_MARGIN) * (baseHalf / fovHalf)
+}
 
 // Exposes an api to the parent: capture() saves a PNG, reset() returns to the
 // default 3D framing. Movement is free orbit in every direction.
-function ViewportApi({ apiRef, controlsRef, fileName }) {
+function ViewportApi({ apiRef, controlsRef, fileName, defaultPosition, fov, near, far }) {
   const { gl, scene, camera } = useThree()
+
+  // Drive the live camera directly. React Three Fiber only reads the <Canvas
+  // camera> prop on mount and does NOT re-apply it when the prop changes at
+  // runtime, so without this the FOV would stay frozen at the initial value
+  // (1° for a 10×10 load). That is what made larger grids vanish: a camera at
+  // ~330 units distance with a stale 1° FOV sees only a ~5-unit sliver — almost
+  // nothing of a 30+ unit model.
+  //
+  // Everything is set in absolute terms (not scaled), so this is idempotent and
+  // safe to run on mount and on every grid-size change.
+  useEffect(() => {
+    camera.fov = fov
+    camera.near = near
+    camera.far = far
+    camera.updateProjectionMatrix()
+    camera.position.set(...defaultPosition)
+    controlsRef.current?.target.set(0, 0, 0)
+    controlsRef.current?.update()
+  }, [camera, controlsRef, defaultPosition, fov, near, far])
 
   useEffect(() => {
     apiRef.current = {
@@ -41,7 +97,11 @@ function ViewportApi({ apiRef, controlsRef, fileName }) {
         a.click()
       },
       reset: () => {
-        camera.position.set(...DEFAULT_CAMERA_POSITION)
+        camera.fov = fov
+        camera.near = near
+        camera.far = far
+        camera.updateProjectionMatrix()
+        camera.position.set(...defaultPosition)
         controlsRef.current?.target.set(0, 0, 0)
         controlsRef.current?.update()
       },
@@ -49,7 +109,7 @@ function ViewportApi({ apiRef, controlsRef, fileName }) {
     return () => {
       apiRef.current = null
     }
-  }, [gl, scene, camera, apiRef, controlsRef, fileName])
+  }, [gl, scene, camera, apiRef, controlsRef, fileName, defaultPosition, fov, near, far])
 
   return null
 }
@@ -149,8 +209,30 @@ function VoxelMesh({ grid, size, extrude, randomLift, showEdges }) {
 function VoxelViewport({ grid, size, extrude, randomLift, showEdges, showGrid = true, autoRotate, apiRef, fileName }) {
   const controlsRef = useRef(null)
 
+  // Adaptive camera: distance and FOV both derive from grid size so every grid
+  // is framed identically — same 3/4 angle, model filling the same portion of
+  // the viewport — regardless of grid size.
+  const scale = size / BASE_GRID_SIZE
+  const fov = adaptiveFov(size)
+  const cameraDistance = framingDistance(size)
+  const defaultPosition = useMemo(
+    () => BASE_CAMERA_POSITION.map((v) => v * (cameraDistance / BASE_CAMERA_DISTANCE)),
+    [cameraDistance]
+  )
+  const near = NEAR_PLANE * scale
+  const far = FAR_PLANE * scale
+
   return (
-    <Canvas camera={{ position: DEFAULT_CAMERA_POSITION, fov: 1 }} gl={{ antialias: true }} dpr={[1, 2]}>
+    <Canvas
+      camera={{
+        position: defaultPosition,
+        fov,
+        near: NEAR_PLANE * scale,
+        far: FAR_PLANE * scale,
+      }}
+      gl={{ antialias: true }}
+      dpr={[1, 2]}
+    >
       <color attach="background" args={[VIEW_BG]} />
       <ambientLight intensity={0.6} />
       <directionalLight position={[12, 14, 8]} intensity={1.6} />
@@ -165,12 +247,19 @@ function VoxelViewport({ grid, size, extrude, randomLift, showEdges, showGrid = 
         dampingFactor={0.08}
         autoRotate={autoRotate}
         autoRotateSpeed={2.5}
-        minDistance={5}
-        maxDistance={800}
-
+        minDistance={BASE_MIN_DISTANCE * scale}
+        maxDistance={BASE_MAX_DISTANCE * scale}
       />
 
-      <ViewportApi apiRef={apiRef} controlsRef={controlsRef} fileName={fileName} />
+      <ViewportApi
+        apiRef={apiRef}
+        controlsRef={controlsRef}
+        fileName={fileName}
+        defaultPosition={defaultPosition}
+        fov={fov}
+        near={near}
+        far={far}
+      />
     </Canvas>
   )
 }
