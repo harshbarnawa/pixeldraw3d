@@ -98,18 +98,6 @@ const QUOTAS = {
 // (current_plan).
 export const getUserPlan = (user) => user?.currentPlan ?? user?.current_plan ?? PLAN.FREE
 
-export function isFree(user) {
-  return getUserPlan(user) === PLAN.FREE
-}
-
-export function isPlus(user) {
-  return getUserPlan(user) === PLAN.PLUS
-}
-
-export function isPro(user) {
-  return getUserPlan(user) === PLAN.PRO
-}
-
 export function hasFeature(user, feature) {
   if (!user && REQUIRES_LOGIN.has(feature)) return false
   const plan = getUserPlan(user)
