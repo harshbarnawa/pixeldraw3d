@@ -7,9 +7,11 @@ export default function PublishDialog({ design, busy, onClose, onPublish }) {
   const canvasRef = useRef(null)
   const [quote, setQuote] = useState("")
 
+  // design is null until the dialog is opened — the optional chaining keeps the
+  // dependency array from dereferencing null (which would crash every mount).
   useEffect(() => {
-    if (canvasRef.current) renderGridToCanvas(canvasRef.current, design.grid)
-  }, [design.grid])
+    if (design && canvasRef.current) renderGridToCanvas(canvasRef.current, design.grid)
+  }, [design?.grid])
 
   if (!design) return null
 
