@@ -96,6 +96,49 @@ function ViewportApi({ apiRef, controlsRef, fileName, defaultPosition, fov, near
         a.download = fileName || "voxel-art.png"
         a.click()
       },
+      // Render the same view to an offscreen target at `scale`× and download a
+      // high-res PNG (PLUS feature). Works with any camera framing.
+      captureHD: async (scale = 2) => {
+        const w = gl.domElement.width
+        const h = gl.domElement.height
+        const rt = new THREE.WebGLRenderTarget(w * scale, h * scale)
+        const prev = gl.getRenderTarget()
+        gl.setRenderTarget(rt)
+        gl.render(scene, camera)
+        const pixels = new Uint8Array(w * scale * h * scale * 4)
+        if (gl.readRenderTargetPixelsAsync) {
+          await gl.readRenderTargetPixelsAsync(rt, 0, 0, w * scale, h * scale, pixels)
+        } else {
+          gl.readRenderTargetPixels(rt, 0, 0, w * scale, h * scale, pixels)
+        }
+        gl.setRenderTarget(prev)
+        rt.dispose()
+
+        // readRenderTargetPixels returns bottom-up; flip rows for the canvas.
+        const canvas = document.createElement("canvas")
+        canvas.width = w * scale
+        canvas.height = h * scale
+        const ctx = canvas.getContext("2d")
+        const img = ctx.createImageData(canvas.width, canvas.height)
+        const n = canvas.width * canvas.height
+        for (let i = 0; i < n; i++) {
+          const src = (n - 1 - i) * 4
+          const dst = i * 4
+          img.data[dst] = pixels[src]
+          img.data[dst + 1] = pixels[src + 1]
+          img.data[dst + 2] = pixels[src + 2]
+          img.data[dst + 3] = pixels[src + 3]
+        }
+        ctx.putImageData(img, 0, 0)
+        const blob = await new Promise((res) => canvas.toBlob(res, "image/png"))
+        const base = (fileName || "voxel-art.png").replace(/\.png$/i, "")
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement("a")
+        a.href = url
+        a.download = `${base}-hd.png`
+        a.click()
+        URL.revokeObjectURL(url)
+      },
       reset: () => {
         camera.fov = fov
         camera.near = near

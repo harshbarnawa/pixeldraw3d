@@ -74,6 +74,11 @@ export default function HomePage() {
   // ----- autosave (PLUS feature) + active-design tracking -----
   const { profile } = useAuth()
   const canAutosave = hasFeature(profile, FEATURE.AUTOSAVE)
+  const historyCap = hasFeature(profile, FEATURE.UNLIMITED_UNDO) ? 200 : 5 // PLUS = practically unlimited undo
+  const canHdExport = hasFeature(profile, FEATURE.HD_EXPORT)
+  const canObjExport = hasFeature(profile, FEATURE.OBJ_EXPORT)
+  const canGlbExport = hasFeature(profile, FEATURE.GLB_EXPORT)
+  const canAnimateExport = hasFeature(profile, FEATURE.ANIMATION_EXPORT)
   // any authed user can re-save the open design (manual save); only autosave
   // (background sync) is premium
   const activeDesign = isCloud && activeDesignId && designs.some((d) => d.id === activeDesignId)
@@ -198,6 +203,12 @@ export default function HomePage() {
           onAddColor={handleAddColor}
           onRequestSave={handleRequestSave}
           onOpenDesigns={() => scrollTo("designs")}
+          historyCap={historyCap}
+          canHdExport={canHdExport}
+          canObjExport={canObjExport}
+          canGlbExport={canGlbExport}
+          canAnimateExport={canAnimateExport}
+          onUpgrade={() => setShowUpgrade(true)}
         />
       </section>
 

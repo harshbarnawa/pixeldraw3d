@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Link } from "react-router-dom"
 import { PALETTE, RUBIKS_PALETTE } from "../constants.js"
 import { convertToGrid, fileToImage, renderGridToCanvas } from "../lib/imageToPixel.js"
+import UpgradeDialog from "./UpgradeDialog.jsx"
 import { useAuth } from "../context/AuthContext.jsx"
 import { FEATURE, hasFeature } from "../lib/plans.js"
 import { imageImportUsage, recordImageImport } from "../lib/usage.js"
@@ -18,6 +18,7 @@ function ImageImporter({ onApply, palette = PALETTE }) {
   const snapPalette = cubeMode ? RUBIKS_PALETTE : palette
   const [dragOver, setDragOver] = useState(false)
   const [error, setError] = useState(null)
+  const [showUpgrade, setShowUpgrade] = useState(false)
 
   const fileInputRef = useRef(null)
   const canvasRef = useRef(null)
@@ -129,7 +130,9 @@ function ImageImporter({ onApply, palette = PALETTE }) {
           <div className="importer-gate">
             <p className="px-label" style={{ fontSize: 14 }}>daily import limit reached</p>
             <p className="muted" style={{ margin: "6px 0 12px" }}>come back tomorrow, or upgrade for more imports a day.</p>
-            <Link to="/subscribe" className="px-btn px-btn--mint">✦ upgrade</Link>
+            <button type="button" className="px-btn px-btn--mint" onClick={() => setShowUpgrade(true)}>
+              ✦ upgrade
+            </button>
           </div>
         ) : !img ? (
           <button
@@ -237,6 +240,8 @@ function ImageImporter({ onApply, palette = PALETTE }) {
         />
         {!result && <p className="muted" style={{ textAlign: "center" }}>add an image to see the pixel grid ✨</p>}
       </div>
+
+      <UpgradeDialog open={showUpgrade} onClose={() => setShowUpgrade(false)} />
     </div>
   )
 }

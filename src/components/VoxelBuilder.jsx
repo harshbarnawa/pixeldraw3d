@@ -3,6 +3,7 @@ import VoxelViewport from "./VoxelViewport"
 import ColorDialog from "./ColorDialog"
 import { PALETTE, PRESETS, SIZE_OPTIONS, MAX_HISTORY } from "../constants.js"
 import { cloneGrid, countFilled, emptyGrid, presetToGrid } from "../lib/grid.js"
+import { buildGLB, buildOBJ, buildTurntableGLB, downloadBlob } from "../lib/voxelExport.js"
 
 // Pastel cursor colors (outer stroke + inner fill) encoded for the SVG data-URI
 const CURSOR_OUTER = "%234a3b5c" // ink
@@ -62,10 +63,26 @@ function cursorFor(tool) {
   return pencil
 }
 
+// Feature-gated export pill: locked → opens the upgrade dialog.
+function ExportPill({ label, locked, busy, onClick, onUpgrade }) {
+  return (
+    <button
+      className="px-btn px-btn--sm viewport-pill"
+      style={locked ? { background: "#c9c0d8", color: "#6b5f7a" } : { background: "#4a3b5c", color: "#fff" }}
+      disabled={busy}
+      title={locked ? `${label} export — upgrade to unlock` : `Export ${label}`}
+      onClick={locked ? onUpgrade : onClick}
+    >
+      {busy ? "…" : locked ? `${label} 🔒` : label}
+    </button>
+  )
+}
+
 // Workspace state lives in App; this component drives it.
 // Props: grid, size, setGrid, setSize, extrude, setExtrude,
 //        randomLift, setRandomLift, palette, onAddColor,
-//        onRequestSave, onOpenDesigns
+//        onRequestSave, onOpenDesigns, historyCap,
+//        canHdExport, canObjExport, canGlbExport, canAnimateExport, onUpgrade
 function VoxelBuilder({
   grid,
   size,
@@ -79,6 +96,12 @@ function VoxelBuilder({
   onAddColor,
   onRequestSave,
   onOpenDesigns,
+  historyCap = MAX_HISTORY,
+  canHdExport = false,
+  canObjExport = false,
+  canGlbExport = false,
+  canAnimateExport = false,
+  onUpgrade = () => {},
 }) {
   const [tool, setTool] = useState("draw")
   const [activeColor, setActiveColor] = useState(PRESETS[0]?.color ?? PALETTE[0])
@@ -109,7 +132,7 @@ function VoxelBuilder({
 
   const pushPast = (snapshot) => {
     pastRef.current.push(snapshot)
-    if (pastRef.current.length > MAX_HISTORY) pastRef.current.shift()
+    if (pastRef.current.length > historyCap) pastRef.current.shift()
     futureRef.current = []
     setCanUndo(true)
     setCanRedo(false)
@@ -134,6 +157,26 @@ function VoxelBuilder({
     setCanRedo(futureRef.current.length > 0)
     setCanUndo(true)
   }
+
+  // ----- exports (feature-gated: png = FREE, hd = PLUS, obj/glb/anim = PRO) -----
+  const [exporting, setExporting] = useState(false)
+  const exportObj = () => {
+    const obj = buildOBJ({ grid, size, extrude, randomLift })
+    downloadBlob(new Blob([obj], { type: "text/plain" }), "pixeldraw3d.obj")
+  }
+  const runGlb = async (build, name) => {
+    setExporting(true)
+    try {
+      const buf = await build({ grid, size, extrude, randomLift })
+      downloadBlob(new Blob([buf], { type: "model/gltf-binary" }), name)
+    } catch (e) {
+      console.error("GLB export failed:", e.message)
+    } finally {
+      setExporting(false)
+    }
+  }
+  const exportGlb = () => runGlb(buildGLB, "pixeldraw3d.glb")
+  const exportAnim = () => runGlb(buildTurntableGLB, "pixeldraw3d-turntable.glb")
 
   // ----- drawing -----
   const getSymCells = (r, c) => {
@@ -486,14 +529,20 @@ function VoxelBuilder({
                 </button>
               </div>
 
-              <button
-                onClick={() => apiRef.current?.capture()}
-                title="Save as PNG"
-                className="px-btn px-btn--sm viewport-pill"
-                style={{ background: "#4a3b5c", color: "#fff" }}
-              >
-                ⤓ png
-              </button>
+              <div className="viewport-export">
+                <button
+                  onClick={() => apiRef.current?.capture()}
+                  title="Save as PNG"
+                  className="px-btn px-btn--sm viewport-pill"
+                  style={{ background: "#4a3b5c", color: "#fff" }}
+                >
+                  ⤓ png
+                </button>
+                <ExportPill label="hd" locked={!canHdExport} busy={exporting} onClick={() => apiRef.current?.captureHD(2)} onUpgrade={onUpgrade} />
+                <ExportPill label="obj" locked={!canObjExport} busy={exporting} onClick={exportObj} onUpgrade={onUpgrade} />
+                <ExportPill label="glb" locked={!canGlbExport} busy={exporting} onClick={exportGlb} onUpgrade={onUpgrade} />
+                <ExportPill label="anim" locked={!canAnimateExport} busy={exporting} onClick={exportAnim} onUpgrade={onUpgrade} />
+              </div>
             </div>
           </div>
         </div>
