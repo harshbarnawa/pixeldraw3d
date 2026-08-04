@@ -121,3 +121,11 @@ export function getPlanQuota(user, quotaKey) {
   const quota = QUOTAS[quotaKey]
   return quota ? (quota[plan] ?? Infinity) : Infinity
 }
+
+// Plan ordering for upgrade/downgrade decisions (FREE < PLUS < PRO).
+const PLAN_TIER = { [PLAN.FREE]: 0, [PLAN.PLUS]: 1, [PLAN.PRO]: 2 }
+export const planTier = (plan) => PLAN_TIER[plan] ?? 0
+
+// Exported so the subscription page can render the feature comparison and
+// quota table from the same single source of truth the gates use.
+export { FEATURE_MATRIX, QUOTAS }
