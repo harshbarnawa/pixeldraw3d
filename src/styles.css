@@ -1853,6 +1853,56 @@ button.comm-stat:hover {
   text-decoration: underline;
 }
 
+/* composer + text posts */
+.comm-top {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.post-composer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.post-composer .post-input {
+  flex: 1;
+}
+
+.post-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.post-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.post-time {
+  font-size: 13px;
+  margin-left: auto;
+}
+
+.post-body {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.post-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
 @media (max-width: 1100px) {
   .comm-grid {
     column-count: 3;

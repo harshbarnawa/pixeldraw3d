@@ -13,7 +13,7 @@ import { mapCloudDesign } from "./cloudDesigns.js"
 const FEED_FIELDS = `
   id, user_id, name, grid, size, extrude, random_lift,
   like_count, comment_count, share_count, is_public, created_at, updated_at,
-  profiles!inner(username, display_name, profile_photo, follower_count)
+  profiles(username, display_name, profile_photo, follower_count)
 `
 
 export function mapFeedDesign(row) {
@@ -110,7 +110,7 @@ export async function searchUsers(term) {
   const { data, error } = await supabase
     .from("profiles")
     .select("username, display_name, profile_photo, follower_count")
-    .ilike("username", `%${term.trim()}%`)
+    .or(`username.ilike.%${term.trim()}%,display_name.ilike.%${term.trim()}%`)
     .limit(20)
   if (error) throw error
   return data ?? []
@@ -190,5 +190,49 @@ export async function deleteComment(commentId) {
 
 export async function recordShare(designId) {
   const { error } = await supabase.from("shares").insert({ design_id: designId })
+  if (error) throw error
+}
+
+// ----- text posts -----
+
+export async function createPost(body) {
+  const { data, error } = await supabase
+    .from("posts")
+    .insert({ body })
+    .select("id, body, like_count, created_at, user_id")
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function fetchPosts({ limit = 50 } = {}) {
+  const { data, error } = await supabase
+    .from("posts")
+    .select("id, body, like_count, created_at, user_id, profiles(username, display_name, profile_photo)")
+    .order("created_at", { ascending: false })
+    .limit(limit)
+  if (error) throw error
+  return data ?? []
+}
+
+export async function deletePost(postId) {
+  const { error } = await supabase.from("posts").delete().eq("id", postId)
+  if (error) throw error
+}
+
+export async function fetchLikedPostIds(userId) {
+  if (!userId) return new Set()
+  const { data, error } = await supabase.from("post_like").select("post_id").eq("user_id", userId)
+  if (error) throw error
+  return new Set((data ?? []).map((d) => d.post_id))
+}
+
+export async function likePost(postId) {
+  const { error } = await supabase.from("post_like").insert({ post_id: postId })
+  if (error) throw error
+}
+
+export async function unlikePost(postId) {
+  const { error } = await supabase.from("post_like").delete().eq("post_id", postId)
   if (error) throw error
 }
