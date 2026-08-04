@@ -83,6 +83,17 @@ export async function deleteCloudDesign(id) {
   if (error) throw error
 }
 
+// Toggle a design between public (visible on the community feed) and private.
+// The RLS policy restricts this to the row's owner; community reads only ever
+// see rows where is_public = true.
+export async function setDesignPublic(id, isPublic) {
+  const { error } = await supabase
+    .from("designs")
+    .update({ is_public: isPublic, updated_at: new Date().toISOString() })
+    .eq("id", id)
+  if (error) throw error
+}
+
 // ----- version history -----
 
 export async function fetchCloudVersions(designId) {
