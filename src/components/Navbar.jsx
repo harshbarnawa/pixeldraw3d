@@ -17,6 +17,9 @@ export default function Navbar() {
           <span className="sparkle">✧</span>
         </Link>
         <span className="tagline">draw a pixel · build a world</span>
+        <Link to="/community" className="nav-link">
+          explore
+        </Link>
         <UserMenu />
       </div>
     </nav>

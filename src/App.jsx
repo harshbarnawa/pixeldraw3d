@@ -10,6 +10,9 @@ const MyDesignsPage = lazy(() => import("./pages/MyDesignsPage.jsx"))
 const ProfilePage = lazy(() => import("./pages/ProfilePage.jsx"))
 const SettingsPage = lazy(() => import("./pages/SettingsPage.jsx"))
 const SubscriptionPage = lazy(() => import("./pages/SubscriptionPage.jsx"))
+const CommunityPage = lazy(() => import("./pages/CommunityPage.jsx"))
+const PublicProfilePage = lazy(() => import("./pages/PublicProfilePage.jsx"))
+const DesignPage = lazy(() => import("./pages/DesignPage.jsx"))
 
 function PageFallback() {
   return (
@@ -38,6 +41,9 @@ export default function App() {
           <Suspense fallback={<PageFallback />}>
             <Routes>
               <Route path="/" element={<HomePage />} />
+              <Route path="/community" element={<CommunityPage />} />
+              <Route path="/u/:username" element={<PublicProfilePage />} />
+              <Route path="/d/:id" element={<DesignPage />} />
               <Route path="/profile" element={<ProfilePage />} />
               <Route path="/my-designs" element={<MyDesignsPage />} />
               <Route path="/subscribe" element={<SubscriptionPage />} />

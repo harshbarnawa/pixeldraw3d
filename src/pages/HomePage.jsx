@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import { useSearchParams } from "react-router-dom"
 import PageShell from "../components/PageShell.jsx"
 import SectionHead from "../components/SectionHead.jsx"
 import VoxelBuilder from "../components/VoxelBuilder.jsx"
@@ -13,6 +14,7 @@ import { useDesigns } from "../context/DesignsContext.jsx"
 import { FEATURE, hasFeature } from "../lib/plans.js"
 import { DEFAULT_PRESET, DEFAULT_SIZE, PALETTE } from "../constants.js"
 import { emptyGrid, presetToGrid } from "../lib/grid.js"
+import { fetchPublicDesignRow } from "../lib/community.js"
 import {
   downloadDesigns,
   loadCustomColors,
@@ -58,6 +60,7 @@ export default function HomePage() {
 
   // ----- toast + dialogs -----
   const { toast, showToast } = useToast()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [showUpgrade, setShowUpgrade] = useState(false)
   const [versionsFor, setVersionsFor] = useState(null)
   const handleOpenVersions = (design) => setVersionsFor(design)
@@ -70,6 +73,31 @@ export default function HomePage() {
     )
     return () => clearTimeout(t)
   }, [grid, gridSize, extrude, randomLift, activeDesignId])
+
+  // Community remix: /?remix=<id> opens someone's public design as an editable
+  // copy. activeDesignId stays null so the next save creates a NEW design —
+  // edits can never touch the original owner's row.
+  useEffect(() => {
+    const remixId = searchParams.get("remix")
+    if (!remixId) return
+    setSearchParams({}, { replace: true })
+    fetchPublicDesignRow(remixId)
+      .then((d) => {
+        if (!d) {
+          showToast("that design isn't available")
+          return
+        }
+        setGrid(d.grid)
+        setGridSize(d.size)
+        setExtrude(d.extrude ?? 2)
+        setRandomLift(d.randomLift ?? 0)
+        setActiveDesignId(null)
+        scrollTo("editor")
+        showToast(`remixing “${d.name}” — save to keep your copy`)
+      })
+      .catch(() => showToast("couldn't load that design"))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // ----- autosave (PLUS feature) + active-design tracking -----
   const { profile } = useAuth()
