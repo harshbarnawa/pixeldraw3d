@@ -13,16 +13,24 @@ import {
   cycleDays,
   getRazorpaySecrets,
   json,
+  rateLimit,
+  safeJson,
   verifyPaymentSignature,
 } from "../_shared/razorpay.ts"
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders })
+  if (req.method !== "POST") return json({ error: "method not allowed" }, 405)
   try {
     const user = await authUser(req)
     if (!user) return json({ error: "unauthorized" }, 401)
+    if (!rateLimit(`verify:${user.id}`, 20, 60_000)) return json({ error: "too many requests" }, 429)
 
-    const { orderId, paymentId, signature } = await req.json()
+    const body = await safeJson(req)
+    const orderId = typeof body?.orderId === "string" ? body.orderId : ""
+    const paymentId = typeof body?.paymentId === "string" ? body.paymentId : ""
+    const signature = typeof body?.signature === "string" ? body.signature : ""
+    if (!orderId || !paymentId || !signature) return json({ error: "missing payment details" }, 400)
 
     const { secret } = getRazorpaySecrets()
     const valid = await verifyPaymentSignature(secret, orderId, paymentId, signature)

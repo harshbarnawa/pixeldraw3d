@@ -81,3 +81,28 @@ export function json(body: unknown, status = 200) {
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   })
 }
+
+// Parse a JSON body safely; returns null on malformed input so callers can
+// respond 400 instead of crashing with a 500.
+export async function safeJson(req: Request) {
+  try {
+    return await req.json()
+  } catch {
+    return null
+  }
+}
+
+// Minimal per-instance in-memory rate limiter (fixed window). This blunts
+// casual abuse of expensive endpoints; global per-project limits live in the
+// Supabase + Razorpay dashboards. Keys are namespaced per user where possible.
+const buckets = new Map<string, { count: number; resetAt: number }>()
+export function rateLimit(key: string, limit: number, windowMs: number) {
+  const now = Date.now()
+  const b = buckets.get(key)
+  if (!b || b.resetAt <= now) {
+    buckets.set(key, { count: 1, resetAt: now + windowMs })
+    return true
+  }
+  b.count += 1
+  return b.count <= limit
+}

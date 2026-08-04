@@ -13,18 +13,23 @@ import {
   getRazorpaySecrets,
   json,
   planAmount,
+  rateLimit,
+  safeJson,
 } from "../_shared/razorpay.ts"
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders })
+  if (req.method !== "POST") return json({ error: "method not allowed" }, 405)
   try {
     const user = await authUser(req)
     if (!user) return json({ error: "unauthorized" }, 401)
+    if (!rateLimit(`order:${user.id}`, 10, 60_000)) return json({ error: "too many requests" }, 429)
 
-    const { plan, cycle = "monthly" } = await req.json()
-    const planKey = String(plan).toLowerCase() // client sends PLUS/PRO, PLANS keys are plus/pro
-    if (!PLANS[planKey]) return json({ error: "unknown plan" }, 400)
-    const amount = planAmount(planKey, cycle)
+    const body = await safeJson(req)
+    const plan = String(body?.plan ?? "").toLowerCase() // client sends PLUS/PRO, PLANS keys are plus/pro
+    const cycle = typeof body?.cycle === "string" ? body.cycle : "monthly"
+    if (!PLANS[plan]) return json({ error: "unknown plan" }, 400)
+    const amount = planAmount(plan, cycle)
     if (!amount) return json({ error: "unknown cycle" }, 400)
 
     const { key, secret } = getRazorpaySecrets()
@@ -38,7 +43,7 @@ serve(async (req) => {
         amount,
         currency: "INR",
         receipt: `pd3d-${user.id.slice(0, 8)}-${Date.now()}`,
-        notes: { plan: planKey, cycle, user_id: user.id },
+        notes: { plan: plan, cycle, user_id: user.id },
       }),
     })
     const order = await resp.json()
@@ -49,7 +54,7 @@ serve(async (req) => {
     const supabase = createSupabase()
     const { error } = await supabase.from("payments").insert({
       user_id: user.id,
-      plan: PLANS[planKey].label,
+      plan: PLANS[plan].label,
       cycle,
       amount,
       currency: "INR",
@@ -58,7 +63,7 @@ serve(async (req) => {
     })
     if (error) throw error
 
-    return json({ key, orderId: order.id, amount: order.amount, currency: order.currency, plan: PLANS[planKey].label, cycle })
+    return json({ key, orderId: order.id, amount: order.amount, currency: order.currency, plan: PLANS[plan].label, cycle })
   } catch (e) {
     console.error("create-order:", e.message)
     return json({ error: e.message }, 500)
