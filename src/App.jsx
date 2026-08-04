@@ -19,17 +19,19 @@ function ScrollToTop() {
 export default function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <ScrollToTop />
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/profile" element={<ProfilePage />} />
-          <Route path="/my-designs" element={<MyDesignsPage />} />
-          <Route path="/subscribe" element={<SubscriptionPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="*" element={<HomePage />} />
-        </Routes>
-      </BrowserRouter>
+      <DesignsProvider>
+        <BrowserRouter>
+          <ScrollToTop />
+          <Routes>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/profile" element={<ProfilePage />} />
+            <Route path="/my-designs" element={<MyDesignsPage />} />
+            <Route path="/subscribe" element={<SubscriptionPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="*" element={<HomePage />} />
+          </Routes>
+        </BrowserRouter>
+      </DesignsProvider>
     </AuthProvider>
   )
 }

@@ -3,25 +3,27 @@ import PageShell from "../components/PageShell.jsx"
 import SectionHead from "../components/SectionHead.jsx"
 import VoxelBuilder from "../components/VoxelBuilder.jsx"
 import DesignLibrary from "../components/DesignLibrary.jsx"
+import DesignUsage from "../components/DesignUsage.jsx"
 import ImageImporter from "../components/ImageImporter.jsx"
+import UpgradeDialog from "../components/UpgradeDialog.jsx"
+import VersionHistoryModal from "../components/VersionHistoryModal.jsx"
+import { useToast } from "../components/useToast.js"
+import { useDesigns } from "../context/DesignsContext.jsx"
 import { DEFAULT_PRESET, DEFAULT_SIZE, PALETTE } from "../constants.js"
 import { emptyGrid, presetToGrid } from "../lib/grid.js"
 import {
-  createId,
   downloadDesigns,
   loadCustomColors,
-  loadDesigns,
   loadWorkspace,
-  nextDesignName,
   parseDesignsFile,
   persistCustomColors,
-  persistDesigns,
   saveWorkspace,
 } from "../lib/storage.js"
 
 const scrollTo = (id) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" })
 
-// The editor home page — every existing feature, unchanged.
+// The editor home page — guests keep local storage, signed-in users get cloud
+// sync (via DesignsContext). Every existing feature is preserved.
 export default function HomePage() {
   // ----- workspace (lifted so Designs + Importer can drive the editor) -----
   const [saved] = useState(loadWorkspace)
@@ -31,31 +33,53 @@ export default function HomePage() {
   )
   const [extrude, setExtrude] = useState(saved?.extrude ?? 2)
   const [randomLift, setRandomLift] = useState(saved?.randomLift ?? 0)
+  const [activeDesignId, setActiveDesignId] = useState(saved?.designId ?? null)
 
-  // ----- design library + custom colors -----
-  const [designs, setDesigns] = useState(loadDesigns)
+  // ----- custom colors -----
   const [customColors, setCustomColors] = useState(loadCustomColors)
   const palette = useMemo(() => [...PALETTE, ...customColors], [customColors])
 
-  // ----- toast -----
-  const [toast, setToast] = useState(null)
-  const toastTimer = useRef(null)
-  const showToast = (msg) => {
-    setToast(msg)
-    clearTimeout(toastTimer.current)
-    toastTimer.current = setTimeout(() => setToast(null), 2400)
-  }
+  // ----- design library (local for guests, cloud when signed in) -----
+  const {
+    designs,
+    isCloud,
+    usage,
+    createDesign,
+    updateDesign,
+    renameDesign,
+    duplicateDesign,
+    deleteDesign,
+    importDesigns,
+    fetchVersions,
+    restoreVersion,
+  } = useDesigns()
 
-  // auto-save workspace for crash recovery
+  // ----- toast + dialogs -----
+  const { toast, showToast } = useToast()
+  const [showUpgrade, setShowUpgrade] = useState(false)
+  const [versionsFor, setVersionsFor] = useState(null)
+  const handleOpenVersions = (design) => setVersionsFor(design)
+
+  // auto-save workspace for crash recovery (restores the open cloud design too)
   useEffect(() => {
-    const t = setTimeout(() => saveWorkspace({ grid, gridSize, extrude, randomLift }), 300)
+    const t = setTimeout(
+      () => saveWorkspace({ grid, size: gridSize, extrude, randomLift, designId: activeDesignId }),
+      300,
+    )
     return () => clearTimeout(t)
-  }, [grid, gridSize, extrude, randomLift])
+  }, [grid, gridSize, extrude, randomLift, activeDesignId])
 
-  const updateDesigns = (next) => {
-    setDesigns(next)
-    persistDesigns(next)
-  }
+  // cloud auto-save: sync the open design after a quiet moment, debounced
+  const autosaveTimer = useRef(null)
+  const activeCloud = isCloud && activeDesignId && designs.some((d) => d.id === activeDesignId)
+  useEffect(() => {
+    if (!activeCloud) return
+    clearTimeout(autosaveTimer.current)
+    autosaveTimer.current = setTimeout(() => {
+      updateDesign(activeDesignId, { grid, size: gridSize, extrude, randomLift })
+    }, 1200)
+    return () => clearTimeout(autosaveTimer.current)
+  }, [grid, gridSize, extrude, randomLift, activeCloud, activeDesignId, updateDesign])
 
   // ----- handlers -----
   const handleAddColor = (hex) => {
@@ -69,20 +93,23 @@ export default function HomePage() {
     showToast(`added ${hex}`)
   }
 
-  const handleRequestSave = ({ grid: g, size, extrude: ex, randomLift: rl }) => {
-    const now = new Date().toISOString()
-    const design = {
-      id: createId(),
-      name: nextDesignName(designs),
-      grid: g,
-      size,
-      extrude: ex,
-      randomLift: rl,
-      createdAt: now,
-      updatedAt: now,
+  const handleRequestSave = async ({ grid: g, size, extrude: ex, randomLift: rl }) => {
+    if (activeCloud) {
+      const res = await updateDesign(activeDesignId, { grid: g, size, extrude: ex, randomLift: rl }, { createVersion: true })
+      showToast(res.ok ? "saved + version snapshot" : "couldn't save")
+      return
     }
-    updateDesigns([...designs, design])
-    showToast(`saved “${design.name}”`)
+    const res = await createDesign({ grid: g, size, extrude: ex, randomLift: rl })
+    if (!res.ok && res.reason === "quota") {
+      setShowUpgrade(true)
+      return
+    }
+    if (!res.ok) {
+      showToast("couldn't save")
+      return
+    }
+    setActiveDesignId(res.design.id)
+    showToast(`saved “${res.design.name}”`)
   }
 
   const handleLoad = (design) => {
@@ -90,37 +117,37 @@ export default function HomePage() {
     setGridSize(design.size)
     setExtrude(design.extrude ?? 2)
     setRandomLift(design.randomLift ?? design.randomHeight ?? 0)
+    setActiveDesignId(design.id)
     scrollTo("editor")
     showToast(`loaded “${design.name}”`)
   }
 
-  const handleRename = (id, name) => {
-    updateDesigns(designs.map((d) => (d.id === id ? { ...d, name, updatedAt: new Date().toISOString() } : d)))
-    showToast("renamed")
+  const handleRename = async (id, name) => {
+    const res = await renameDesign(id, name)
+    showToast(res.ok ? "renamed" : "couldn't rename")
   }
 
-  const handleDuplicate = (id) => {
-    const src = designs.find((d) => d.id === id)
-    if (!src) return
-    const now = new Date().toISOString()
-    updateDesigns([
-      ...designs,
-      { ...src, id: createId(), name: `${src.name} copy`, createdAt: now, updatedAt: now },
-    ])
-    showToast(`duplicated “${src.name}”`)
+  const handleDuplicate = async (id) => {
+    const res = await duplicateDesign(id)
+    if (!res.ok && res.reason === "quota") {
+      setShowUpgrade(true)
+      return
+    }
+    showToast(res.ok ? `duplicated “${res.design.name}”` : "couldn't duplicate")
   }
 
-  const handleDelete = (id) => {
-    updateDesigns(designs.filter((d) => d.id !== id))
-    showToast("design deleted")
+  const handleDelete = async (id) => {
+    const res = await deleteDesign(id)
+    showToast(res.ok ? "design deleted" : "couldn't delete")
   }
 
   const handleImportFile = async (file) => {
     try {
       const text = await file.text()
-      const { list, added } = parseDesignsFile(text, designs)
-      updateDesigns(list)
-      showToast(added > 0 ? `imported ${added} design${added > 1 ? "s" : ""}` : "nothing new to import")
+      const { list } = parseDesignsFile(text, [])
+      const res = await importDesigns(list)
+      if (res?.quotaHit) setShowUpgrade(true)
+      showToast(res && res.added > 0 ? `imported ${res.added} design${res.added > 1 ? "s" : ""}` : "nothing new to import")
     } catch {
       showToast("couldn't read that file")
     }
@@ -131,6 +158,16 @@ export default function HomePage() {
     setGridSize(size)
     scrollTo("editor")
     showToast("sent to slate ✦")
+  }
+
+  const handleRestored = (design) => {
+    setGrid(design.grid)
+    setGridSize(design.size)
+    setExtrude(design.extrude ?? 2)
+    setRandomLift(design.randomLift ?? 0)
+    setActiveDesignId(design.id)
+    scrollTo("editor")
+    showToast("restored a previous version")
   }
 
   return (
@@ -173,20 +210,31 @@ export default function HomePage() {
         <SectionHead
           kicker="03 · gallery"
           title="saved designs"
-          sub="your pixel creations, stored right in the browser."
+          sub={isCloud ? "your designs, synced to the cloud." : "your pixel creations, stored right in this browser."}
         />
         <DesignLibrary
           designs={designs}
+          usage={usage ? <DesignUsage used={usage.used} limit={usage.limit} /> : null}
           onLoad={handleLoad}
           onRename={handleRename}
           onDuplicate={handleDuplicate}
           onDelete={handleDelete}
+          onOpenVersions={isCloud ? handleOpenVersions : undefined}
           onExportAll={() => downloadDesigns(designs)}
           onImportFile={handleImportFile}
         />
       </section>
 
       {toast && <div className="px-toast">{toast}</div>}
+      <UpgradeDialog open={showUpgrade} onClose={() => setShowUpgrade(false)} />
+      <VersionHistoryModal
+        open={!!versionsFor}
+        design={versionsFor}
+        onClose={() => setVersionsFor(null)}
+        fetchVersions={fetchVersions}
+        restoreVersion={restoreVersion}
+        onRestored={handleRestored}
+      />
     </PageShell>
   )
 }
