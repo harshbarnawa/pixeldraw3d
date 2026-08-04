@@ -106,10 +106,10 @@ export default function DesignCard({ design, onLoad, onRename, onDuplicate, onDe
           {onTogglePublic && design.isPublic !== undefined && (
             <button
               className={`px-btn px-btn--sm ${design.isPublic ? "px-btn--mint" : "px-btn--white"}`}
-              title={design.isPublic ? "shared with the community" : "only you can see this"}
+              title={design.isPublic ? "set back to private" : "share with the community"}
               onClick={() => onTogglePublic(design)}
             >
-              {design.isPublic ? "public ✓" : "private"}
+              {design.isPublic ? "public ✓" : "share ↗"}
             </button>
           )}
           <button className="px-btn px-btn--sm px-btn--peach" onClick={() => onDelete(design.id)}>

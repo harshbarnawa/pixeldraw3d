@@ -10,10 +10,13 @@
 import { supabase } from "./supabase.js"
 import { mapCloudDesign } from "./cloudDesigns.js"
 
+// Join profiles via the EXPLICIT relationship name: PostgREST finds multiple
+// paths between designs and profiles (the direct FK, plus many-to-many through
+// post_likes/shares), so a bare `profiles` embed is ambiguous (PGRST201).
 const FEED_FIELDS = `
   id, user_id, name, grid, size, extrude, random_lift,
   like_count, comment_count, share_count, is_public, created_at, updated_at,
-  profiles(username, display_name, profile_photo, follower_count)
+  profiles!designs_user_id_profiles_fk(username, display_name, profile_photo, follower_count)
 `
 
 export function mapFeedDesign(row) {
@@ -164,7 +167,7 @@ export async function unlikeDesign(designId) {
 export async function fetchComments(designId) {
   const { data, error } = await supabase
     .from("post_comments")
-    .select("id, body, created_at, user_id, profiles(username, display_name, profile_photo)")
+    .select("id, body, created_at, user_id, profiles!post_comments_user_id_profiles_fk(username, display_name, profile_photo)")
     .eq("design_id", designId)
     .order("created_at", { ascending: true })
   if (error) throw error
@@ -193,30 +196,48 @@ export async function recordShare(designId) {
   if (error) throw error
 }
 
-// ----- text posts -----
+// ----- posts (design posts carry a design + quote; plain text allowed) -----
 
-export async function createPost(body) {
+const POST_FIELDS = `
+  id, body, like_count, comment_count, created_at, user_id, design_id,
+  profiles!posts_user_id_profiles_fk(username, display_name, profile_photo),
+  designs(id, name, grid, size, extrude, random_lift)
+`
+
+export async function fetchPublicPosts({ sort = "explore", limit = 50 } = {}) {
+  let q = supabase.from("posts").select(POST_FIELDS).limit(limit)
+  if (sort === "trending") {
+    const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+    q = q.gte("created_at", cutoff).order("like_count", { ascending: false })
+  } else {
+    // "explore" and "recent" both show newest-first; explore is the default tab
+    q = q.order("created_at", { ascending: false })
+  }
+  const { data, error } = await q
+  if (error) throw error
+  return data ?? []
+}
+
+// body is optional when posting a design — a design post can be quote-less.
+export async function createPost({ body = "", designId = null } = {}) {
+  const payload = designId ? { body, design_id: designId } : { body }
   const { data, error } = await supabase
     .from("posts")
-    .insert({ body })
-    .select("id, body, like_count, created_at, user_id")
+    .insert(payload)
+    .select("id, body, like_count, comment_count, created_at, user_id, design_id")
     .single()
   if (error) throw error
   return data
 }
 
-export async function fetchPosts({ limit = 50 } = {}) {
-  const { data, error } = await supabase
-    .from("posts")
-    .select("id, body, like_count, created_at, user_id, profiles(username, display_name, profile_photo)")
-    .order("created_at", { ascending: false })
-    .limit(limit)
-  if (error) throw error
-  return data ?? []
-}
-
 export async function deletePost(postId) {
   const { error } = await supabase.from("posts").delete().eq("id", postId)
+  if (error) throw error
+}
+
+// Remove every post referencing a design (used when a design is set private).
+export async function deletePostByDesign(designId) {
+  const { error } = await supabase.from("posts").delete().eq("design_id", designId)
   if (error) throw error
 }
 

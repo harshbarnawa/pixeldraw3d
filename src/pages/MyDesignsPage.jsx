@@ -7,12 +7,14 @@ import DesignCard from "../components/DesignCard.jsx"
 import DesignUsage from "../components/DesignUsage.jsx"
 import UpgradeDialog from "../components/UpgradeDialog.jsx"
 import VersionHistoryModal from "../components/VersionHistoryModal.jsx"
+import PublishDialog from "../components/PublishDialog.jsx"
 import PlanBadge from "../components/PlanBadge.jsx"
 import { useToast } from "../components/useToast.js"
 import { useDesigns } from "../context/DesignsContext.jsx"
 import { useAuth } from "../context/AuthContext.jsx"
 import { saveWorkspace } from "../lib/storage.js"
 import { setDesignPublic } from "../lib/cloudDesigns.js"
+import { createPost, deletePostByDesign } from "../lib/community.js"
 
 const SORTS = {
   recent: (a, b) => String(b.updatedAt ?? "").localeCompare(String(a.updatedAt ?? "")),
@@ -41,6 +43,8 @@ function MyDesignsInner() {
   const [showUpgrade, setShowUpgrade] = useState(false)
   const [versionsFor, setVersionsFor] = useState(null)
   const [publicOverride, setPublicOverride] = useState({})
+  const [publishFor, setPublishFor] = useState(null)
+  const [publishing, setPublishing] = useState(false)
   const { toast, showToast } = useToast()
 
   const visible = useMemo(() => {
@@ -83,17 +87,38 @@ function MyDesignsInner() {
     showToast(`restored “${design.name}”`)
   }
 
-  // Publish toggle: flips is_public optimistically (only the owner may call
-  // setDesignPublic — RLS enforces it server-side).
-  const handleTogglePublic = async (design) => {
-    const next = !design.isPublic
-    setPublicOverride((o) => ({ ...o, [design.id]: next }))
+  // Share flow: clicking the button on a private design opens the publish
+  // dialog (design + quote → community post). Clicking it on a public design
+  // unsets it back to private and removes the post.
+  const handleTogglePublic = (design) => {
+    if (design.isPublic) {
+      setPublicOverride((o) => ({ ...o, [design.id]: false }))
+      setDesignPublic(design.id, false)
+        .then(() => deletePostByDesign(design.id))
+        .then(() => showToast("set to private"))
+        .catch((e) => {
+          setPublicOverride((o) => ({ ...o, [design.id]: true }))
+          showToast(e.message)
+        })
+    } else {
+      setPublishFor(design)
+    }
+  }
+
+  const handlePublish = async (quote) => {
+    if (!publishFor) return
+    setPublishing(true)
     try {
-      await setDesignPublic(design.id, next)
-      showToast(next ? "shared to the community ✨" : "set to private")
+      const d = publishFor
+      await setDesignPublic(d.id, true)
+      await createPost({ body: quote, designId: d.id })
+      setPublicOverride((o) => ({ ...o, [d.id]: true }))
+      setPublishFor(null)
+      showToast(quote ? "posted to the community ✨" : "shared to the community ✨")
     } catch (e) {
-      setPublicOverride((o) => ({ ...o, [design.id]: !next }))
       showToast(e.message)
+    } finally {
+      setPublishing(false)
     }
   }
 
@@ -156,6 +181,12 @@ function MyDesignsInner() {
 
       {toast && <div className="px-toast">{toast}</div>}
       <UpgradeDialog open={showUpgrade} onClose={() => setShowUpgrade(false)} />
+      <PublishDialog
+        design={publishFor}
+        busy={publishing}
+        onClose={() => setPublishFor(null)}
+        onPublish={handlePublish}
+      />
       <VersionHistoryModal
         open={!!versionsFor}
         design={versionsFor}
