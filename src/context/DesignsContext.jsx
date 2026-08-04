@@ -230,6 +230,53 @@ export function DesignsProvider({ children }) {
     [bumpProfileCounter],
   )
 
+  // Import a parsed design file (from DesignLibrary). Local: merge + persist.
+  // Cloud: respect the quota, insert one at a time, snapshot each with a version.
+  const importDesigns = useCallback(
+    async (incoming) => {
+      const existing = new Map(designsRef.current.map((d) => [d.id, d]))
+      const fresh = []
+      for (const d of incoming) {
+        if (!d || !Array.isArray(d.grid) || typeof d.size !== "number") continue
+        const id = String(d.id)
+        if (existing.has(id)) continue
+        const design = { ...d, id }
+        existing.set(id, design)
+        fresh.push(design)
+      }
+      if (fresh.length === 0) return { ok: true, added: 0 }
+
+      if (modeRef.current === "local") {
+        designsRef.current = sortRecent([...existing.values()])
+        setDesigns(designsRef.current)
+        persistDesigns(designsRef.current)
+        return { ok: true, added: fresh.length }
+      }
+
+      const limit = quotaLimit()
+      let inserted = 0
+      let quotaHit = false
+      for (const design of fresh) {
+        if (designsRef.current.length >= limit) {
+          quotaHit = true
+          break
+        }
+        try {
+          await insertCloudDesign(design)
+          await addCloudVersion(design)
+          designsRef.current = sortRecent([design, ...designsRef.current])
+          inserted += 1
+        } catch (e) {
+          console.error("cloud import failed:", e.message)
+        }
+      }
+      setDesigns(designsRef.current)
+      bumpProfileCounter(designsRef.current.length)
+      return { ok: true, added: inserted, quotaHit }
+    },
+    [bumpProfileCounter, quotaLimit],
+  )
+
   // ----- version history (cloud only) -----
 
   const addCloudVersionSnapshot = useCallback(async (design) => {
@@ -295,10 +342,11 @@ export function DesignsProvider({ children }) {
       renameDesign,
       duplicateDesign,
       deleteDesign,
+      importDesigns,
       fetchVersions,
       restoreVersion,
     }),
-    [designs, loading, isCloud, usage, canCreateMore, createDesign, updateDesign, renameDesign, duplicateDesign, deleteDesign, fetchVersions, restoreVersion],
+    [designs, loading, isCloud, usage, canCreateMore, createDesign, updateDesign, renameDesign, duplicateDesign, deleteDesign, importDesigns, fetchVersions, restoreVersion],
   )
 
   return <DesignsContext.Provider value={value}>{children}</DesignsContext.Provider>
