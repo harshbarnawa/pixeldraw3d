@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react"
+import { memo, useEffect, useLayoutEffect, useMemo, useRef } from "react"
 import { Canvas, useThree } from "@react-three/fiber"
 import { OrbitControls } from "@react-three/drei"
 import * as THREE from "three"
@@ -307,4 +307,6 @@ function VoxelViewport({ grid, size, extrude, randomLift, showEdges, showGrid = 
   )
 }
 
-export default VoxelViewport
+// Memoized: the editor re-renders on every tool/color interaction, but the 3D
+// scene only needs a new render when one of its props actually changes.
+export default memo(VoxelViewport)

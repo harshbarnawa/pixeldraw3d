@@ -4,10 +4,14 @@
 // Both rebuild the exact geometry the viewport renders: one unit cube per grid
 // cell, extruded by the height slider, shifted up by the deterministic random
 // lift. See VoxelViewport for the on-screen equivalent.
+//
+// The OBJ path is pure string building (no three). The GLB path imports three's
+// GLTFExporter + BufferGeometryUtils dynamically so that ~50 KB of exporter
+// code only loads when an export is actually clicked, keeping the editor's
+// initial bundle lean. `three` itself is already in the main bundle (the
+// viewport imports it), so it's a static import here with zero extra cost.
 
 import * as THREE from "three"
-import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js"
-import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js"
 
 // Deterministic per-cell PRNG — must match VoxelViewport.randomUnit so exports
 // line up with what's on screen for a given random-lift value.
@@ -94,9 +98,41 @@ export function buildOBJ({ grid, size, extrude, randomLift }) {
   return lines.join("\n") + "\n"
 }
 
+// Lazily import the exporter-only modules so they don't ship in the initial
+// bundle; cached in module scope so a second export is instant.
+let exporterPromise, mergePromise
+const loadExporter = () =>
+  (exporterPromise ??= import("three/examples/jsm/exporters/GLTFExporter.js").then((m) => m.GLTFExporter))
+const loadMerge = () =>
+  (mergePromise ??= import("three/examples/jsm/utils/BufferGeometryUtils.js").then((m) => m.mergeGeometries))
+
+// Binary GLB via three's GLTFExporter (loaded on demand). Returns an ArrayBuffer.
+export async function buildGLB({ grid, size, extrude, randomLift }) {
+  const instances = computeInstances({ grid, size, extrude, randomLift })
+  const geometry = await mergedVoxelGeometry(instances)
+  const scene = new THREE.Scene()
+  scene.add(new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ vertexColors: true })))
+  return parseScene(scene, await loadExporter())
+}
+
+// GLB with a looping 360° turntable animation baked in (PRO animation export).
+export async function buildTurntableGLB({ grid, size, extrude, randomLift, seconds = 4 }) {
+  const instances = computeInstances({ grid, size, extrude, randomLift })
+  const geometry = await mergedVoxelGeometry(instances)
+  const group = new THREE.Group()
+  group.add(new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ vertexColors: true })))
+  const scene = new THREE.Scene()
+  scene.add(group)
+
+  const track = new THREE.VectorKeyframeTrack(".rotation[y]", [0, seconds], [0, Math.PI * 2])
+  const clip = new THREE.AnimationClip("turntable", seconds, [track])
+  group.animations = [clip]
+  return parseScene(scene, await loadExporter())
+}
+
 // One merged, vertex-colored BoxGeometry covering every cube — compact for the
 // GLB and fast enough to export even a full 100×100 slate.
-function mergedVoxelGeometry(instances) {
+async function mergedVoxelGeometry(instances) {
   const box = new THREE.BoxGeometry(1, 1, 1)
   const parts = []
   const color = new THREE.Color()
@@ -115,32 +151,10 @@ function mergedVoxelGeometry(instances) {
     parts.push(g)
   }
   if (parts.length === 0) return new THREE.BufferGeometry()
-  return mergeGeometries(parts)
+  return (await loadMerge())(parts)
 }
 
-// Binary GLB via three's GLTFExporter. Returns an ArrayBuffer.
-export async function buildGLB({ grid, size, extrude, randomLift }) {
-  const instances = computeInstances({ grid, size, extrude, randomLift })
-  const scene = new THREE.Scene()
-  scene.add(new THREE.Mesh(mergedVoxelGeometry(instances), new THREE.MeshStandardMaterial({ vertexColors: true })))
-  return parseScene(scene)
-}
-
-// GLB with a looping 360° turntable animation baked in (PRO animation export).
-export async function buildTurntableGLB({ grid, size, extrude, randomLift, seconds = 4 }) {
-  const instances = computeInstances({ grid, size, extrude, randomLift })
-  const group = new THREE.Group()
-  group.add(new THREE.Mesh(mergedVoxelGeometry(instances), new THREE.MeshStandardMaterial({ vertexColors: true })))
-  const scene = new THREE.Scene()
-  scene.add(group)
-
-  const track = new THREE.VectorKeyframeTrack(".rotation[y]", [0, seconds], [0, Math.PI * 2])
-  const clip = new THREE.AnimationClip("turntable", seconds, [track])
-  group.animations = [clip]
-  return parseScene(scene)
-}
-
-function parseScene(scene) {
+async function parseScene(scene, GLTFExporter) {
   const exporter = new GLTFExporter()
   return new Promise((resolve, reject) => {
     exporter.parse(
