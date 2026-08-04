@@ -8,7 +8,12 @@
 
 import { supabase } from "./supabase.js"
 
-const EDGE_NAMES = { createOrder: "create-order", verifyPayment: "verify-payment", cancel: "cancel-subscription" }
+const EDGE_NAMES = {
+  createOrder: "create-order",
+  verifyPayment: "verify-payment",
+  cancel: "cancel-subscription",
+  deleteAccount: "delete-account",
+}
 
 async function invokeEdge(name, body) {
   if (!supabase) throw new Error("supabase is not configured")
@@ -86,6 +91,10 @@ export async function startCheckout({ plan, cycle = "monthly", refreshProfile, o
 
 export function cancelSubscription() {
   return invokeEdge(EDGE_NAMES.cancel, {})
+}
+
+export function deleteAccount() {
+  return invokeEdge(EDGE_NAMES.deleteAccount, {})
 }
 
 // Billing history for the UI — reads only the caller's rows via RLS.

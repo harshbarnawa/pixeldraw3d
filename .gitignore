@@ -10,6 +10,7 @@ dist
 dist-ssr
 *.local
 key.md
+supabase/.temp
 
 # Editor directories and files
 .vscode/*

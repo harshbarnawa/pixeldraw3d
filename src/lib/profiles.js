@@ -18,6 +18,25 @@ export async function fetchProfile(userId) {
   return data
 }
 
+// Update the caller's own profile row (RLS: only the owner may update).
+export async function updateProfile(userId, fields) {
+  const { error } = await supabase.from("profiles").update(fields).eq("id", userId)
+  return { ok: !error, error }
+}
+
+// True when `username` is already taken by another profile. Editing usernames
+// is allowed only when uniqueness is enforced, so the UI validates before save.
+export async function isUsernameTaken(username, excludeId) {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("username", username)
+    .neq("id", excludeId)
+    .maybeSingle()
+  if (error) return true // be conservative: assume taken if the check fails
+  return !!data
+}
+
 // Local fallback used when the trigger has not run yet (e.g. migration not
 // applied) so the auth UI still works. Never persisted.
 export function minimalProfile(user) {

@@ -10,6 +10,13 @@
     <meta name="description" content="pixeldraw3d — draw on a 2D slate, watch every pixel become a cube. Image to pixel converter, saved designs, and a pastel pixel art studio." />
     <meta name="theme-color" content="#fff7ed" />
     <title>pixeldraw3d — pastel pixel studio</title>
+    <script>
+      // Apply the saved theme before first paint to avoid a flash of the wrong one.
+      try {
+        var t = localStorage.getItem("pixeldraw3d-theme") || "light"
+        document.documentElement.dataset.theme = t
+      } catch (e) {}
+    </script>
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
