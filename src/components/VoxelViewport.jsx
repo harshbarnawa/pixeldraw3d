@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react"
-import { Canvas, useFrame, useThree } from "@react-three/fiber"
-import { TrackballControls } from "@react-three/drei"
+import { Canvas, useThree } from "@react-three/fiber"
+import { OrbitControls } from "@react-three/drei"
 import * as THREE from "three"
 
 // Max cubes a single pixel column can hold (height slider ceiling; the random
@@ -23,28 +23,10 @@ const GRID_CENTER = "#d6c8f2"
 const GRID_LINE = "#eee6ff"
 
 // Default 3/4 view — exactly the original app camera.
-const DEFAULT_CAMERA_POSITION = [13, 9, 13]
-
-const AXIS_Y = new THREE.Vector3(0, 1, 0)
-
-// TrackballControls has no built-in auto-rotate, so spin the camera around the
-// target ourselves when the ⟳ toggle is on.
-function AutoSpin({ enabled, controlsRef }) {
-  useFrame((_, delta) => {
-    if (!enabled) return
-    const controls = controlsRef.current
-    if (!controls) return
-    const cam = controls.object
-    const offset = cam.position.clone().sub(controls.target)
-    offset.applyAxisAngle(AXIS_Y, delta * 0.5)
-    cam.position.copy(controls.target).add(offset)
-    cam.lookAt(controls.target)
-  })
-  return null
-}
+const DEFAULT_CAMERA_POSITION = [600, 550, 650]
 
 // Exposes an api to the parent: capture() saves a PNG, reset() returns to the
-// default 3D framing. Movement is free in every direction with no limit.
+// default 3D framing. Movement is free orbit in every direction.
 function ViewportApi({ apiRef, controlsRef, fileName }) {
   const { gl, scene, camera } = useThree()
 
@@ -168,7 +150,7 @@ function VoxelViewport({ grid, size, extrude, randomLift, showEdges, showGrid = 
   const controlsRef = useRef(null)
 
   return (
-    <Canvas camera={{ position: DEFAULT_CAMERA_POSITION, fov: 45 }} gl={{ antialias: true }} dpr={[1, 2]}>
+    <Canvas camera={{ position: DEFAULT_CAMERA_POSITION, fov: 1 }} gl={{ antialias: true }} dpr={[1, 2]}>
       <color attach="background" args={[VIEW_BG]} />
       <ambientLight intensity={0.6} />
       <directionalLight position={[12, 14, 8]} intensity={1.6} />
@@ -176,24 +158,17 @@ function VoxelViewport({ grid, size, extrude, randomLift, showEdges, showGrid = 
       {showGrid && <gridHelper args={[size, size, GRID_CENTER, GRID_LINE]} position={[0, 0, 0]} />}
       <VoxelMesh grid={grid} size={size} extrude={extrude} randomLift={randomLift} showEdges={showEdges} />
 
-      <TrackballControls
+      <OrbitControls
         ref={controlsRef}
         makeDefault
-        rotateSpeed={1.2}
-        zoomSpeed={1.1}
-        panSpeed={1}
+        enableDamping
+        dampingFactor={0.08}
+        autoRotate={autoRotate}
+        autoRotateSpeed={2.5}
         minDistance={5}
-        maxDistance={50}
-        dynamicDampingFactor={0.1}
-        // Blender-style: left OR middle mouse drags to orbit, right drags to pan,
-        // wheel zooms. No polar limits — full 360° rotation to top view and beyond.
-        mouseButtons={{
-          LEFT: THREE.MOUSE.ROTATE,
-          MIDDLE: THREE.MOUSE.ROTATE,
-          RIGHT: THREE.MOUSE.PAN,
-        }}
+        maxDistance={800}
+
       />
-      <AutoSpin enabled={autoRotate} controlsRef={controlsRef} />
 
       <ViewportApi apiRef={apiRef} controlsRef={controlsRef} fileName={fileName} />
     </Canvas>
