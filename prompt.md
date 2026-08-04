@@ -1,5 +1,13 @@
 # PixelDraw3D SaaS Master Prompt
+This document is the project specification.
 
+Read it once.
+
+Do not repeatedly quote or restate it.
+
+While implementing, load only the current phase and any directly relevant global rules into working memory.
+
+Ignore future phases until they are reached.
 You are working on an existing production project called **PixelDraw3D**.
 
 It is a **pixel-art editor with a live 3D voxel viewport** (React Three Fiber), currently a **Vite + React (JavaScript) single-page app** with plain CSS, already deployed to Vercel.
