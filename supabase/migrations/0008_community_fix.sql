@@ -15,6 +15,72 @@
 -- Apply in the Supabase SQL Editor. Safe to run more than once.
 -- ============================================================
 
+-- ---------- 0. fix the signup trigger --------------------------
+-- auth.users has NO `app_metadata` column (the real one is raw_app_meta_data).
+-- The 0001 trigger referenced new.app_metadata, so every profile insert failed
+-- silently (its exception handler swallowed it) — which is why profiles was
+-- empty. Recreate the trigger function with the correct column so FUTURE
+-- signups get a profile row too.
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  base      text;
+  candidate text;
+begin
+  -- Google stores the name under both `name` and `full_name`; fall back to
+  -- email, then a plain "user", so base can never end up null.
+  base := lower(
+    regexp_replace(
+      coalesce(
+        nullif(btrim(new.raw_user_meta_data ->> 'name'), ''),
+        nullif(btrim(new.raw_user_meta_data ->> 'full_name'), ''),
+        new.email,
+        'user'
+      ),
+      '[^a-z0-9]+', '_', 'g'
+    )
+  );
+  base := substr(base, 1, 24);
+  if base is null or base in ('', '_', 'user', 'null') then
+    base := 'user';
+  end if;
+
+  -- retry with a random numeric suffix until it is unique
+  loop
+    candidate := base || '_' || (floor(random() * 9000) + 1000)::int;
+    exit when not exists (select 1 from public.profiles where username = candidate);
+  end loop;
+
+  begin
+    insert into public.profiles (
+      id, full_name, display_name, username, email, profile_photo, provider
+    )
+    values (
+      new.id,
+      coalesce(new.raw_user_meta_data ->> 'name', new.raw_user_meta_data ->> 'full_name', ''),
+      coalesce(new.raw_user_meta_data ->> 'name', new.raw_user_meta_data ->> 'full_name', ''),
+      candidate,
+      new.email,
+      coalesce(new.raw_user_meta_data ->> 'avatar_url', new.raw_user_meta_data ->> 'picture', ''),
+      coalesce(new.raw_app_meta_data ->> 'provider', 'google')
+    );
+  exception when others then
+    raise log 'handle_new_user: profile insert failed for %: %', new.id, sqlerrm;
+  end;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+
 -- ---------- 1. backfill missing profiles from auth.users ----------
 insert into public.profiles (
   id, full_name, display_name, username, email, profile_photo, provider
@@ -32,7 +98,7 @@ select
   ) || '_' || substr(replace(au.id::text, '-', ''), 1, 6),
   au.email,
   coalesce(au.raw_user_meta_data ->> 'avatar_url', au.raw_user_meta_data ->> 'picture', ''),
-  coalesce(au.app_metadata ->> 'provider', 'google')
+  coalesce(au.raw_app_meta_data ->> 'provider', 'google')
 from auth.users au
 on conflict (id) do nothing;
 

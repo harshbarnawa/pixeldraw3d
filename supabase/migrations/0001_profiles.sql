@@ -81,7 +81,7 @@ begin
       candidate,
       new.email,
       coalesce(new.raw_user_meta_data ->> 'avatar_url', new.raw_user_meta_data ->> 'picture', ''),
-      coalesce(new.app_metadata ->> 'provider', 'google')
+      coalesce(new.raw_app_meta_data ->> 'provider', 'google')
     );
   exception when others then
     raise log 'handle_new_user: profile insert failed for %: %', new.id, sqlerrm;
