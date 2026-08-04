@@ -29,6 +29,10 @@ export function AuthProvider({ children }) {
   // Session restore + live auth events (login, logout, token refresh).
   useEffect(() => {
     alive.current = true
+    if (!supabase) {
+      setLoading(false) // guest-only mode when Supabase isn't configured
+      return
+    }
 
     supabase.auth.getSession().then(({ data }) => applyUser(data.session?.user ?? null)).finally(() => {
       if (alive.current) setLoading(false)
@@ -46,6 +50,7 @@ export function AuthProvider({ children }) {
   }, [applyUser])
 
   const signInWithGoogle = useCallback(async () => {
+    if (!supabase) throw new Error("Supabase not configured")
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: { redirectTo: window.location.origin },
@@ -54,6 +59,7 @@ export function AuthProvider({ children }) {
   }, [])
 
   const signOut = useCallback(async () => {
+    if (!supabase) return
     const { error } = await supabase.auth.signOut()
     if (error) throw error
   }, [])
