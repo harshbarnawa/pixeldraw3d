@@ -1,6 +1,7 @@
 import { useEffect } from "react"
 import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom"
 import { AuthProvider } from "./context/AuthContext.jsx"
+import { DesignsProvider } from "./context/DesignsContext.jsx"
 import HomePage from "./pages/HomePage.jsx"
 import MyDesignsPage from "./pages/MyDesignsPage.jsx"
 import ProfilePage from "./pages/ProfilePage.jsx"
