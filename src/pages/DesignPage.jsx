@@ -72,9 +72,14 @@ export default function DesignPage() {
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "post_comments", filter: `design_id=eq.${id}` },
-        (payload) => {
-          setComments((prev) => [...prev, payload.new])
-          setDesign((d) => (d ? { ...d, commentCount: d.commentCount + 1 } : d))
+        async () => {
+          // refetch so the new comment arrives with its author's profile, and
+          // take the count from the server (assignment, not increment, so the
+          // poster's own optimistic bump can't double-count)
+          setComments(await fetchComments(id).catch(() => []))
+          fetchPublicDesignById(id)
+            .then((d) => d && setDesign(d))
+            .catch(() => {})
         },
       )
       .subscribe()
