@@ -1,6 +1,10 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { Link } from "react-router-dom"
 import { PALETTE, RUBIKS_PALETTE } from "../constants.js"
 import { convertToGrid, fileToImage, renderGridToCanvas } from "../lib/imageToPixel.js"
+import { useAuth } from "../context/AuthContext.jsx"
+import { FEATURE, hasFeature } from "../lib/plans.js"
+import { imageImportUsage, recordImageImport } from "../lib/usage.js"
 
 const PREVIEW_PX = 320
 
@@ -18,9 +22,22 @@ function ImageImporter({ onApply, palette = PALETTE }) {
   const fileInputRef = useRef(null)
   const canvasRef = useRef(null)
 
+  // ----- member-only feature: guests are blocked, signed-in users get a daily quota -----
+  const { profile, isAuthed, refreshProfile, signInWithGoogle } = useAuth()
+  const canImport = hasFeature(profile, FEATURE.IMAGE_IMPORT) // false for guests
+  const usage = useMemo(() => imageImportUsage(profile), [profile])
+
   const handleFile = async (file) => {
     if (!file || !file.type.startsWith("image/")) {
       setError("drop an image file, please")
+      return
+    }
+    if (!canImport) {
+      setError("image import is for signed-in users")
+      return
+    }
+    if (usage.remaining <= 0) {
+      setError("you've used today's import limit")
       return
     }
     try {
@@ -28,6 +45,10 @@ function ImageImporter({ onApply, palette = PALETTE }) {
       setImg(image)
       setFileName(file.name)
       setError(null)
+      if (isAuthed) {
+        await recordImageImport(profile)
+        refreshProfile()
+      }
     } catch {
       setError("couldn't read that image")
     }
@@ -76,7 +97,13 @@ function ImageImporter({ onApply, palette = PALETTE }) {
       <div className="px-panel px-panel--pad stack">
         <h3 className="px-panel-title">
           <span>Convert</span>
-          <span className="muted" style={{ fontWeight: 400 }}>upload · drop · paste</span>
+          {isAuthed ? (
+            <span className="muted" style={{ fontWeight: 400 }}>
+              {usage.unlimited ? "unlimited imports" : `${usage.used} of ${usage.limit} used today`}
+            </span>
+          ) : (
+            <span className="muted" style={{ fontWeight: 400 }}>upload · drop · paste</span>
+          )}
         </h3>
 
         <input
@@ -90,7 +117,21 @@ function ImageImporter({ onApply, palette = PALETTE }) {
           }}
         />
 
-        {!img ? (
+        {!isAuthed ? (
+          <div className="importer-gate">
+            <p className="px-label" style={{ fontSize: 14 }}>image import is for members</p>
+            <p className="muted" style={{ margin: "6px 0 12px" }}>log in for free daily conversions — upgrade for more.</p>
+            <button type="button" className="px-btn google-btn" onClick={() => signInWithGoogle().catch(() => {})}>
+              ⌁ continue with google
+            </button>
+          </div>
+        ) : usage.remaining <= 0 ? (
+          <div className="importer-gate">
+            <p className="px-label" style={{ fontSize: 14 }}>daily import limit reached</p>
+            <p className="muted" style={{ margin: "6px 0 12px" }}>come back tomorrow, or upgrade for more imports a day.</p>
+            <Link to="/subscribe" className="px-btn px-btn--mint">✦ upgrade</Link>
+          </div>
+        ) : !img ? (
           <button
             type="button"
             className={`dropzone ${dragOver ? "dropzone--over" : ""}`}

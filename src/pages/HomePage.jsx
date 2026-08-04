@@ -8,7 +8,9 @@ import ImageImporter from "../components/ImageImporter.jsx"
 import UpgradeDialog from "../components/UpgradeDialog.jsx"
 import VersionHistoryModal from "../components/VersionHistoryModal.jsx"
 import { useToast } from "../components/useToast.js"
+import { useAuth } from "../context/AuthContext.jsx"
 import { useDesigns } from "../context/DesignsContext.jsx"
+import { FEATURE, hasFeature } from "../lib/plans.js"
 import { DEFAULT_PRESET, DEFAULT_SIZE, PALETTE } from "../constants.js"
 import { emptyGrid, presetToGrid } from "../lib/grid.js"
 import {
@@ -69,17 +71,21 @@ export default function HomePage() {
     return () => clearTimeout(t)
   }, [grid, gridSize, extrude, randomLift, activeDesignId])
 
-  // cloud auto-save: sync the open design after a quiet moment, debounced
+  // ----- autosave (PLUS feature) + active-design tracking -----
+  const { profile } = useAuth()
+  const canAutosave = hasFeature(profile, FEATURE.AUTOSAVE)
+  // any authed user can re-save the open design (manual save); only autosave
+  // (background sync) is premium
+  const activeDesign = isCloud && activeDesignId && designs.some((d) => d.id === activeDesignId)
   const autosaveTimer = useRef(null)
-  const activeCloud = isCloud && activeDesignId && designs.some((d) => d.id === activeDesignId)
   useEffect(() => {
-    if (!activeCloud) return
+    if (!activeDesign || !canAutosave) return
     clearTimeout(autosaveTimer.current)
     autosaveTimer.current = setTimeout(() => {
       updateDesign(activeDesignId, { grid, size: gridSize, extrude, randomLift })
     }, 1200)
     return () => clearTimeout(autosaveTimer.current)
-  }, [grid, gridSize, extrude, randomLift, activeCloud, activeDesignId, updateDesign])
+  }, [grid, gridSize, extrude, randomLift, activeDesign, canAutosave, activeDesignId, updateDesign])
 
   // ----- handlers -----
   const handleAddColor = (hex) => {
@@ -94,7 +100,7 @@ export default function HomePage() {
   }
 
   const handleRequestSave = async ({ grid: g, size, extrude: ex, randomLift: rl }) => {
-    if (activeCloud) {
+    if (activeDesign) {
       const res = await updateDesign(activeDesignId, { grid: g, size, extrude: ex, randomLift: rl }, { createVersion: true })
       showToast(res.ok ? "saved + version snapshot" : "couldn't save")
       return
