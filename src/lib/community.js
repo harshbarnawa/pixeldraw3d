@@ -10,6 +10,15 @@
 import { supabase } from "./supabase.js"
 import { mapCloudDesign } from "./cloudDesigns.js"
 
+// Every community write must carry the caller's id so the RLS check
+// `auth.uid() = user_id` passes (same pattern as cloudDesigns.toRow).
+async function currentUserId() {
+  const { data } = await supabase.auth.getSession()
+  const id = data.session?.user?.id ?? null
+  if (!id) throw new Error("not signed in")
+  return id
+}
+
 // Join profiles via the EXPLICIT relationship name: PostgREST finds multiple
 // paths between designs and profiles (the direct FK, plus many-to-many through
 // post_likes/shares), so a bare `profiles` embed is ambiguous (PGRST201).
@@ -134,7 +143,8 @@ export async function fetchIsFollowing(followerId, followingId) {
 }
 
 export async function followUser(followingId) {
-  const { error } = await supabase.from("follows").insert({ following_id: followingId })
+  const follower_id = await currentUserId()
+  const { error } = await supabase.from("follows").insert({ follower_id, following_id: followingId })
   if (error) throw error
 }
 
@@ -153,7 +163,8 @@ export async function fetchLikedDesignIds(userId) {
 }
 
 export async function likeDesign(designId) {
-  const { error } = await supabase.from("post_likes").insert({ design_id: designId })
+  const user_id = await currentUserId()
+  const { error } = await supabase.from("post_likes").insert({ user_id, design_id: designId })
   if (error) throw error
 }
 
@@ -175,9 +186,10 @@ export async function fetchComments(designId) {
 }
 
 export async function addComment(designId, body) {
+  const user_id = await currentUserId()
   const { data, error } = await supabase
     .from("post_comments")
-    .insert({ design_id: designId, body })
+    .insert({ user_id, design_id: designId, body })
     .select("id, body, created_at, user_id")
     .single()
   if (error) throw error
@@ -192,7 +204,8 @@ export async function deleteComment(commentId) {
 // ----- shares -----
 
 export async function recordShare(designId) {
-  const { error } = await supabase.from("shares").insert({ design_id: designId })
+  const user_id = await currentUserId()
+  const { error } = await supabase.from("shares").insert({ user_id, design_id: designId })
   if (error) throw error
 }
 
@@ -220,7 +233,9 @@ export async function fetchPublicPosts({ sort = "explore", limit = 50 } = {}) {
 
 // body is optional when posting a design — a design post can be quote-less.
 export async function createPost({ body = "", designId = null } = {}) {
-  const payload = designId ? { body, design_id: designId } : { body }
+  const user_id = await currentUserId()
+  const payload = { user_id, body }
+  if (designId) payload.design_id = designId
   const { data, error } = await supabase
     .from("posts")
     .insert(payload)
@@ -249,7 +264,8 @@ export async function fetchLikedPostIds(userId) {
 }
 
 export async function likePost(postId) {
-  const { error } = await supabase.from("post_like").insert({ post_id: postId })
+  const user_id = await currentUserId()
+  const { error } = await supabase.from("post_like").insert({ user_id, post_id: postId })
   if (error) throw error
 }
 
