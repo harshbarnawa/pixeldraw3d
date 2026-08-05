@@ -1,12 +1,12 @@
-// POST /verify-payment  { orderId, paymentId, signature, plan, cycle }
+// POST /verify-subscription  { subscriptionId, paymentId, signature }
 //
-// Verifies the Razorpay payment signature server-side (HMAC-SHA256 of
-// `${orderId}|${paymentId}` with the key secret), then flips the payment +
-// invoice to paid and activates the subscription on the user's profile.
-//
-// This path handles the one-time LIFETIME purchase. Recurring monthly/yearly
-// payments verify through /verify-subscription instead. The client callback is
-// never trusted on its own — this signature check is the source of truth.
+// Verifies the Razorpay subscription payment signature server-side
+// (HMAC-SHA256 of `${paymentId}|${subscriptionId}`), confirms the subscription
+// is really active at Razorpay, then flips the pending payment + invoice to
+// paid and activates the subscription on the profile. The client callback is
+// never trusted on its own — the signature check + Razorpay API confirmations
+// are the gate, and the webhook stays the source of truth for what happens
+// after (renewals, cancellations).
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
 import { corsHeaders } from "../_shared/cors.ts"
@@ -14,13 +14,14 @@ import {
   authUser,
   createSupabase,
   cycleDays,
+  fetchSubscription,
   getRazorpaySecrets,
   invoiceNumber,
   json,
   rateLimit,
   rzpRequest,
   safeJson,
-  verifyPaymentSignature,
+  verifySubscriptionSignature,
 } from "../_shared/razorpay.ts"
 
 serve(async (req) => {
@@ -29,28 +30,37 @@ serve(async (req) => {
   try {
     const user = await authUser(req)
     if (!user) return json({ error: "unauthorized" }, 401)
-    if (!rateLimit(`verify:${user.id}`, 20, 60_000)) return json({ error: "too many requests" }, 429)
+    if (!rateLimit(`vsub:${user.id}`, 20, 60_000)) return json({ error: "too many requests" }, 429)
 
     const body = await safeJson(req)
-    const orderId = typeof body?.orderId === "string" ? body.orderId : ""
+    const subscriptionId = typeof body?.subscriptionId === "string" ? body.subscriptionId : ""
     const paymentId = typeof body?.paymentId === "string" ? body.paymentId : ""
     const signature = typeof body?.signature === "string" ? body.signature : ""
-    if (!orderId || !paymentId || !signature) return json({ error: "missing payment details" }, 400)
+    if (!subscriptionId || !paymentId || !signature) return json({ error: "missing payment details" }, 400)
 
     const { secret } = getRazorpaySecrets()
-    const valid = await verifyPaymentSignature(secret, orderId, paymentId, signature)
+    const valid = await verifySubscriptionSignature(secret, paymentId, subscriptionId, signature)
     if (!valid) return json({ error: "signature mismatch" }, 400)
+
+    // Confirm with Razorpay that this subscription is real + read customer_id.
+    const sub = await fetchSubscription(subscriptionId)
+    const subStatus = String(sub?.status ?? "").toLowerCase()
+    if (!["active", "authenticated", "pending"].includes(subStatus)) {
+      return json({ error: `subscription is not active (${subStatus})` }, 409)
+    }
+    let customerId = sub?.customer_id ?? ""
 
     const supabase = createSupabase()
     const { data: payment } = await supabase
       .from("payments")
       .select()
-      .eq("razorpay_order_id", orderId)
+      .eq("razorpay_subscription_id", subscriptionId)
       .eq("user_id", user.id)
+      .eq("status", "pending")
       .maybeSingle()
     if (!payment) return json({ error: "order not found" }, 404)
 
-    // The plan/cycle come from the stored order, never from the client body.
+    // Plan/cycle come from the stored payment row, never from the client body.
     const plan = payment.plan
     const cycle = payment.cycle
     const now = new Date()
@@ -60,17 +70,16 @@ serve(async (req) => {
     // Best-effort enrichment: invoice id + hosted URL + customer id from Razorpay.
     let invoiceId = ""
     let invoiceUrl = ""
-    let customerId = ""
     try {
       const rzpPayment = await rzpRequest(`/payments/${paymentId}`)
       invoiceId = rzpPayment?.invoice_id ?? ""
-      customerId = rzpPayment?.customer_id ?? ""
+      customerId = customerId || (rzpPayment?.customer_id ?? "")
       if (invoiceId) {
         const rzpInvoice = await rzpRequest(`/invoices/${invoiceId}`)
         invoiceUrl = rzpInvoice?.short_url ?? ""
       }
     } catch (e) {
-      console.error("verify-payment: enrichment failed:", e.message)
+      console.error("verify-subscription: enrichment failed:", e.message)
     }
 
     const { error: payErr } = await supabase
@@ -108,10 +117,11 @@ serve(async (req) => {
       .update({
         current_plan: plan,
         subscription_status: "ACTIVE",
-        billing_cycle: cycle === "lifetime" ? "LIFETIME" : cycle === "yearly" ? "YEARLY" : "MONTHLY",
+        billing_cycle: cycle === "yearly" ? "YEARLY" : "MONTHLY",
         subscription_expires_at: periodEnd.toISOString(),
         next_billing_date: periodEnd.toISOString(),
         razorpay_customer_id: customerId,
+        razorpay_subscription_id: subscriptionId,
         updated_at: now.toISOString(),
       })
       .eq("id", user.id)
@@ -119,7 +129,7 @@ serve(async (req) => {
 
     return json({ ok: true, plan, expiresAt: periodEnd.toISOString() })
   } catch (e) {
-    console.error("verify-payment:", e.message)
+    console.error("verify-subscription:", e.message)
     return json({ error: e.message }, 500)
   }
 })

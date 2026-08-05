@@ -8,15 +8,16 @@ import { useAuth } from "../context/AuthContext.jsx"
 import { cancelSubscription, fetchBilling, startCheckout } from "../lib/razorpay.js"
 import { FEATURE, FEATURE_MATRIX, PLAN, PLAN_META, QUOTAS, getUserPlan, planTier } from "../lib/plans.js"
 
-// Billing cycles. Yearly + lifetime are UI structure only until the payments
-// phase lands; the toggle is live so the pricing cards preview them.
+// Billing cycles. All three are live: monthly/yearly recur via Razorpay
+// Subscriptions, lifetime is a one-time order.
 const CYCLES = [
   { id: "monthly", label: "monthly", unit: "/mo" },
-  { id: "yearly", label: "yearly", unit: "/yr", soon: true },
-  { id: "lifetime", label: "lifetime", unit: "one-time", soon: true },
+  { id: "yearly", label: "yearly", unit: "/yr" },
+  { id: "lifetime", label: "lifetime", unit: "one-time" },
 ]
 
-// UI-only price previews for the future cycles.
+// Display prices (₹, whole rupees) — mirror the server amounts in
+// supabase/functions/_shared/razorpay.ts (paise).
 const PRICE_BY_CYCLE = {
   monthly: { [PLAN.FREE]: 0, [PLAN.PLUS]: 99, [PLAN.PRO]: 299 },
   yearly: { [PLAN.FREE]: 0, [PLAN.PLUS]: 990, [PLAN.PRO]: 2990 },
@@ -47,6 +48,7 @@ const CARD_FEATURES = {
 const STATUS_META = {
   NONE: { label: "not subscribed", cls: "sub-chip" },
   ACTIVE: { label: "active", cls: "sub-chip sub-chip--good" },
+  PENDING: { label: "pending", cls: "sub-chip sub-chip--warn" },
   CANCELLED: { label: "cancelled", cls: "sub-chip sub-chip--warn" },
   EXPIRED: { label: "expired", cls: "sub-chip sub-chip--bad" },
 }
@@ -83,6 +85,8 @@ export default function SubscriptionPage() {
   const tier = planTier(plan)
   const status = String(profile?.subscription_status ?? "NONE").toUpperCase()
   const statusMeta = STATUS_META[status] ?? STATUS_META.NONE
+  const isLifetime = String(profile?.billing_cycle ?? "").toUpperCase() === "LIFETIME"
+  const currentCycle = isLifetime ? "lifetime" : String(profile?.billing_cycle ?? "MONTHLY").toLowerCase()
 
   // Real dates once a payment lands (edge function writes these).
   const nextBilling = profile?.next_billing_date
@@ -167,20 +171,22 @@ export default function SubscriptionPage() {
                     type="button"
                     className="px-btn px-btn--mint"
                     disabled={busyPlan === PLAN.PLUS}
-                    onClick={() => handleCheckout(PLAN.PLUS)}
+                    onClick={() => handleCheckout(PLAN.PLUS, cycle)}
                   >
                     {busyPlan === PLAN.PLUS ? "opening…" : "↑ upgrade"}
                   </button>
+                ) : isLifetime ? (
+                  <span className="sub-chip sub-chip--good">✓ lifetime access</span>
                 ) : status === "ACTIVE" ? (
                   <button type="button" className="px-btn px-btn--white" onClick={handleCancel}>
                     ✕ cancel subscription
                   </button>
-                ) : status === "CANCELLED" ? (
+                ) : ["CANCELLED", "EXPIRED", "COMPLETED"].includes(status) ? (
                   <button
                     type="button"
                     className="px-btn px-btn--mint"
                     disabled={busyPlan === plan}
-                    onClick={() => handleCheckout(plan)}
+                    onClick={() => handleCheckout(plan, currentCycle)}
                   >
                     {busyPlan === plan ? "opening…" : "↻ renew"}
                   </button>
@@ -189,7 +195,7 @@ export default function SubscriptionPage() {
                     type="button"
                     className="px-btn px-btn--mint"
                     disabled={busyPlan === PLAN.PLUS}
-                    onClick={() => handleCheckout(PLAN.PLUS)}
+                    onClick={() => handleCheckout(PLAN.PLUS, cycle)}
                   >
                     {busyPlan === PLAN.PLUS ? "opening…" : "↑ upgrade"}
                   </button>
@@ -204,11 +210,11 @@ export default function SubscriptionPage() {
               </div>
               <div className="sub-fact">
                 <span className="px-label">next billing date</span>
-                <span>{fmtDate(nextBilling)}</span>
+                <span>{isLifetime ? "—" : fmtDate(nextBilling)}</span>
               </div>
               <div className="sub-fact">
                 <span className="px-label">expiry date</span>
-                <span>{fmtDate(expiryDate)}</span>
+                <span>{isLifetime ? "lifetime" : fmtDate(expiryDate)}</span>
               </div>
               <div className="sub-fact">
                 <span className="px-label">member since</span>
@@ -227,7 +233,6 @@ export default function SubscriptionPage() {
                 onClick={() => setCycle(c.id)}
               >
                 {c.label}
-                {c.soon && <span className="soon-tag">soon</span>}
               </button>
             ))}
           </div>
@@ -235,16 +240,35 @@ export default function SubscriptionPage() {
           <div className="price-grid">
             {[PLAN.FREE, PLAN.PLUS, PLAN.PRO].map((p) => {
               const meta = PLAN_META[p]
-              const isCurrent = p === plan && cycle === "monthly"
+              const isCurrent = p === plan && currentCycle === cycle
               const price = PRICE_BY_CYCLE[cycle]?.[p] ?? 0
-              const isSoon = cycle !== "monthly"
-              const ctaLabel = isCurrent
-                ? "current plan"
-                : isSoon
-                  ? "coming soon"
-                  : planTier(p) > tier
-                    ? "upgrade"
-                    : "downgrade"
+
+              // Decide the card's label + action for this plan + selected cycle.
+              // Downgrades cancel (take effect at period end); upgrades and
+              // cycle switches start a new subscription (old one cancels at
+              // cycle end server-side).
+              let ctaLabel
+              let onClick = null
+              if (p === PLAN.FREE) {
+                if (plan === PLAN.FREE && isCurrent) ctaLabel = "current plan"
+                else if (planTier(p) < tier) {
+                  ctaLabel = "downgrade"
+                  onClick = handleCancel
+                } else ctaLabel = "free"
+              } else if (isCurrent) {
+                ctaLabel = "current plan"
+              } else if (planTier(p) > tier) {
+                ctaLabel = "upgrade"
+                onClick = () => handleCheckout(p, cycle)
+              } else if (planTier(p) < tier) {
+                ctaLabel = "downgrade"
+                onClick = handleCancel
+              } else {
+                ctaLabel = `switch to ${cycle}`
+                onClick = () => handleCheckout(p, cycle)
+              }
+
+              const disabled = !onClick || busyPlan === p
               return (
                 <div key={p} className={`px-panel px-panel--pad price-card${isCurrent ? " price-card--current" : ""}`}>
                   <div className="price-card-head">
@@ -262,19 +286,9 @@ export default function SubscriptionPage() {
                   </ul>
                   <button
                     type="button"
-                    className={`px-btn ${isCurrent || isSoon ? "px-btn--white" : "px-btn--mint"}`}
-                    disabled={isCurrent || busyPlan === p}
-                    onClick={() => {
-                      if (isSoon) {
-                        showToast("yearly & lifetime land in a future phase")
-                        return
-                      }
-                      if (planTier(p) < tier) {
-                        handleCancel()
-                        return
-                      }
-                      handleCheckout(p)
-                    }}
+                    className={`px-btn ${disabled ? "px-btn--white" : "px-btn--mint"}`}
+                    disabled={disabled}
+                    onClick={onClick}
                   >
                     {busyPlan === p ? "opening…" : ctaLabel}
                   </button>

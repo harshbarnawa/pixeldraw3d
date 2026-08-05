@@ -1,0 +1,9 @@
+{
+  // Compiler options for the Edge Functions. The codebase's catch blocks read
+  // `e.message` directly (Deno's default types the catch variable as `unknown`);
+  // this keeps `deno check` / `supabase functions deploy` consistent with the
+  // runtime behaviour we already rely on.
+  "compilerOptions": {
+    "useUnknownInCatchVariables": false
+  }
+}

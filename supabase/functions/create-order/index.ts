@@ -1,8 +1,11 @@
-// POST /create-order  { plan, cycle }
+// POST /create-order  { plan, cycle: "lifetime" }
 //
-// Authenticates the caller, creates a Razorpay order server-side (so the
-// amount can't be tampered with), records a pending payment row and returns
+// Authenticates the caller, creates a one-time Razorpay order server-side (so
+// the amount can't be tampered with), records a pending payment row and returns
 // the checkout payload. The Razorpay secret never leaves the server.
+//
+// This endpoint is now the LIFETIME path only — recurring monthly/yearly billing
+// goes through /create-subscription (Razorpay Subscriptions).
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
 import { corsHeaders } from "../_shared/cors.ts"
@@ -14,6 +17,7 @@ import {
   json,
   planAmount,
   rateLimit,
+  rzpRequest,
   safeJson,
 } from "../_shared/razorpay.ts"
 
@@ -27,29 +31,21 @@ serve(async (req) => {
 
     const body = await safeJson(req)
     const plan = String(body?.plan ?? "").toLowerCase() // client sends PLUS/PRO, PLANS keys are plus/pro
-    const cycle = typeof body?.cycle === "string" ? body.cycle : "monthly"
+    const cycle = typeof body?.cycle === "string" ? body.cycle : "lifetime"
     if (!PLANS[plan]) return json({ error: "unknown plan" }, 400)
+    if (cycle !== "lifetime") {
+      return json({ error: "monthly/yearly are recurring — use /create-subscription" }, 400)
+    }
     const amount = planAmount(plan, cycle)
     if (!amount) return json({ error: "unknown cycle" }, 400)
 
-    const { key, secret } = getRazorpaySecrets()
-    const resp = await fetch("https://api.razorpay.com/v1/orders", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: "Basic " + btoa(`${key}:${secret}`),
-      },
-      body: JSON.stringify({
-        amount,
-        currency: "INR",
-        receipt: `pd3d-${user.id.slice(0, 8)}-${Date.now()}`,
-        notes: { plan: plan, cycle, user_id: user.id },
-      }),
+    const { key } = getRazorpaySecrets()
+    const order = await rzpRequest("/orders", "POST", {
+      amount,
+      currency: "INR",
+      receipt: `pd3d-${user.id.slice(0, 8)}-${Date.now()}`,
+      notes: { plan, cycle, user_id: user.id },
     })
-    const order = await resp.json()
-    if (!resp.ok || order.error) {
-      throw new Error(order.error?.description ?? "razorpay order creation failed")
-    }
 
     const supabase = createSupabase()
     const { error } = await supabase.from("payments").insert({
