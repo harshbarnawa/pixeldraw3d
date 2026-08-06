@@ -18,7 +18,6 @@ import {
   authUser,
   cancelRazorpaySubscription,
   createSupabase,
-  fetchSubscription,
   getOrCreatePlan,
   getRazorpaySecrets,
   json,
@@ -72,26 +71,15 @@ serve(async (req) => {
       }
     }
 
-    // PENDING + existing subscription → check if it's still awaiting payment
-    // at Razorpay. If so, reopen checkout with the same subscription_id instead
-    // of creating an orphaned duplicate.
+    // PENDING + existing subscription → cancel the stale one at Razorpay and
+    // create a fresh subscription with the current total_count.  We never
+    // blindly reuse because old subscriptions may have been created with a
+    // total_count that exceeded Razorpay's end_time cap.
     if (currentStatus === "PENDING" && existingSubId) {
       try {
-        const existing = await fetchSubscription(existingSubId)
-        if (existing?.status === "created") {
-          return json({
-            key: getRazorpaySecrets().key,
-            subscriptionId: existingSubId,
-            amount: planAmount(plan, cycle),
-            currency: "INR",
-            plan: PLANS[plan].label,
-            cycle,
-            prefill: { name: profile?.full_name || "", email: profile?.email || "" },
-          })
-        }
-        // Subscription is active / cancelled / other — fall through to create new.
-      } catch (e) {
-        console.error("create-subscription: reuse check failed:", e.message)
+        await cancelRazorpaySubscription(existingSubId)
+      } catch {
+        // Not fatal — stale subs are harmless and will expire.
       }
     }
 
