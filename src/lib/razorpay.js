@@ -51,7 +51,7 @@ function loadRazorpay() {
 
 // Full flow: create the checkout server-side → open Razorpay modal → verify on
 // success. Resolves with { status, data } where status is "paid" | "dismissed" | "error".
-export async function startCheckout({ plan, cycle = "monthly", refreshProfile, onActivated }) {
+export async function startCheckout({ plan, cycle = "monthly", contact, refreshProfile, onActivated }) {
   const Razorpay = await loadRazorpay()
   const isRecurring = cycle === "monthly" || cycle === "yearly"
 
@@ -99,7 +99,7 @@ export async function startCheckout({ plan, cycle = "monthly", refreshProfile, o
           subscription_id: checkout.subscriptionId,
           name: "PixelDraw3D",
           description: `${checkout.plan} · ${checkout.cycle}`,
-          prefill: checkout.prefill ?? {},
+          prefill: { ...checkout.prefill, contact: contact || undefined },
           theme: { color: "#8b7cf6" },
           handler,
           modal: { ondismiss: () => done("dismissed") },
@@ -112,6 +112,7 @@ export async function startCheckout({ plan, cycle = "monthly", refreshProfile, o
           description: `${checkout.plan} · ${checkout.cycle}`,
           order_id: checkout.orderId,
           theme: { color: "#8b7cf6" },
+          prefill: { ...checkout.prefill, contact: contact || undefined },
           handler,
           modal: { ondismiss: () => done("dismissed") },
         }

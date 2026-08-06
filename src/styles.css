@@ -1423,6 +1423,53 @@ textarea {
   font-size: 13px;
 }
 
+/* ---------- phone prompt overlay ---------- */
+
+.sub-phone-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.sub-phone-dialog {
+  background: var(--surface, #fff);
+  border: 2px solid var(--border, #ddd);
+  border-radius: 14px;
+  padding: 28px 30px 24px;
+  max-width: 380px;
+  width: 90%;
+}
+
+.sub-phone-hint {
+  color: var(--ink-soft, #666);
+  font-size: 14px;
+  margin: 4px 0 18px;
+  line-height: 1.45;
+}
+
+.sub-phone-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sub-phone-prefix {
+  font-weight: 700;
+  font-size: 15px;
+  white-space: nowrap;
+}
+
+.sub-phone-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+  justify-content: flex-end;
+}
+
 /* ---------- dark theme ---------- */
 
 [data-theme="dark"] {

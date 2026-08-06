@@ -18,9 +18,11 @@ import {
   authUser,
   cancelRazorpaySubscription,
   createSupabase,
+  fetchSubscription,
   getOrCreatePlan,
   getRazorpaySecrets,
   json,
+  planAmount,
   rateLimit,
   rzpRequest,
   safeJson,
@@ -53,26 +55,48 @@ serve(async (req) => {
       .maybeSingle()
 
     const currentStatus = String(profile?.subscription_status ?? "NONE").toUpperCase()
-    const activeSubId = currentStatus === "ACTIVE" ? profile?.razorpay_subscription_id ?? "" : ""
+    const existingSubId = profile?.razorpay_subscription_id ?? ""
 
-    // Block duplicates: an ACTIVE recurring sub on the SAME plan + cycle. A
-    // higher tier, or the same plan on a different cycle, is a legitimate
-    // change (the old sub is cancelled at its cycle end below).
-    if (activeSubId) {
+    // ── Duplicate / reuse guard ──────────────────────────────────
+    // ACTIVE + same plan/cycle → block (already subscribed).
+    if (currentStatus === "ACTIVE" && existingSubId) {
       const samePlanCycle =
         String(profile?.current_plan ?? "").toUpperCase() === PLANS[plan].label &&
         String(profile?.billing_cycle ?? "").toLowerCase() === cycle
       if (samePlanCycle) return json({ error: "already subscribed — manage it from the subscription page" }, 409)
+      if (String(profile?.billing_cycle ?? "").toUpperCase() === "LIFETIME") {
+        return json({ error: "lifetime plan is already active" }, 409)
+      }
     }
-    if (currentStatus === "ACTIVE" && String(profile?.billing_cycle ?? "").toUpperCase() === "LIFETIME") {
-      return json({ error: "lifetime plan is already active" }, 409)
+
+    // PENDING + existing subscription → check if it's still awaiting payment
+    // at Razorpay. If so, reopen checkout with the same subscription_id instead
+    // of creating an orphaned duplicate.
+    if (currentStatus === "PENDING" && existingSubId) {
+      try {
+        const existing = await fetchSubscription(existingSubId)
+        if (existing?.status === "created") {
+          return json({
+            key: getRazorpaySecrets().key,
+            subscriptionId: existingSubId,
+            amount: planAmount(plan, cycle),
+            currency: "INR",
+            plan: PLANS[plan].label,
+            cycle,
+            prefill: { name: profile?.full_name || "", email: profile?.email || "" },
+          })
+        }
+        // Subscription is active / cancelled / other — fall through to create new.
+      } catch (e) {
+        console.error("create-subscription: reuse check failed:", e.message)
+      }
     }
 
     // Replacing an active subscription (upgrade / cycle switch): stop future
     // charges on the old one at its cycle end — premium access never lapses.
-    if (activeSubId) {
+    if (currentStatus === "ACTIVE" && existingSubId) {
       try {
-        await cancelRazorpaySubscription(activeSubId)
+        await cancelRazorpaySubscription(existingSubId)
       } catch (e) {
         // Not fatal — the old sub may already be cancelled; the new one is what matters.
         console.error("create-subscription: cancel old sub failed:", e.message)

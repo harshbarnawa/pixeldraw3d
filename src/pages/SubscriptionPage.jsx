@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import PageShell from "../components/PageShell.jsx"
 import SectionHead from "../components/SectionHead.jsx"
 import RequireAuth from "../components/RequireAuth.jsx"
@@ -81,6 +81,12 @@ export default function SubscriptionPage() {
   const [busyPlan, setBusyPlan] = useState(null)
   const [billing, setBilling] = useState({ payments: [], invoices: [] })
 
+  // Razorpay subscriptions require a phone number for auto-debit mandate.
+  // Stored in localStorage so the user only enters it once.
+  const [phone, setPhone] = useState(() => localStorage.getItem("pd3d_phone") ?? "")
+  const [showPhonePrompt, setShowPhonePrompt] = useState(false)
+  const pendingCheckoutRef = useRef(null)
+
   const plan = getUserPlan(profile)
   const tier = planTier(plan)
   const status = String(profile?.subscription_status ?? "NONE").toUpperCase()
@@ -102,11 +108,18 @@ export default function SubscriptionPage() {
   }, [loadBilling])
 
   const handleCheckout = async (target, cyc = "monthly") => {
+    // Razorpay subscriptions need a phone for auto-debit mandate — prompt once.
+    if (!phone) {
+      pendingCheckoutRef.current = { target, cyc }
+      setShowPhonePrompt(true)
+      return
+    }
     setBusyPlan(target)
     try {
       const res = await startCheckout({
         plan: target,
         cycle: cyc,
+        contact: phone,
         refreshProfile,
         onActivated: () => {},
       })
@@ -121,6 +134,19 @@ export default function SubscriptionPage() {
       showToast(e.message)
     } finally {
       setBusyPlan(null)
+    }
+  }
+
+  const submitPhone = (raw) => {
+    const digits = raw.replace(/\D/g, "")
+    if (digits.length < 10) return
+    localStorage.setItem("pd3d_phone", digits)
+    setPhone(digits)
+    setShowPhonePrompt(false)
+    const pending = pendingCheckoutRef.current
+    if (pending) {
+      pendingCheckoutRef.current = null
+      handleCheckout(pending.target, pending.cyc)
     }
   }
 
@@ -352,6 +378,46 @@ export default function SubscriptionPage() {
             </div>
           </div>
         </div>
+
+        {/* ----- phone prompt (for Razorpay auto-debit mandate) ----- */}
+        {showPhonePrompt && (
+          <div className="sub-phone-overlay" onClick={() => { setShowPhonePrompt(false); pendingCheckoutRef.current = null }}>
+            <div className="sub-phone-dialog" onClick={(e) => e.stopPropagation()}>
+              <p className="px-label">mobile number required</p>
+              <p className="sub-phone-hint">
+                Razorpay needs your phone number to set up the subscription mandate.
+              </p>
+              <div className="sub-phone-row">
+                <span className="sub-phone-prefix">+91</span>
+                <input
+                  type="tel"
+                  className="text-input"
+                  placeholder="10-digit mobile number"
+                  maxLength={10}
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") submitPhone(e.target.value)
+                  }}
+                />
+              </div>
+              <div className="sub-phone-actions">
+                <button type="button" className="px-btn px-btn--white" onClick={() => { setShowPhonePrompt(false); pendingCheckoutRef.current = null }}>
+                  cancel
+                </button>
+                <button
+                  type="button"
+                  className="px-btn px-btn--mint"
+                  onClick={(e) => {
+                    const input = e.currentTarget.closest(".sub-phone-dialog").querySelector("input")
+                    submitPhone(input.value)
+                  }}
+                >
+                  continue to checkout
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </RequireAuth>
     </PageShell>
   )
