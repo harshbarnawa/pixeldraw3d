@@ -28,8 +28,11 @@ import {
   safeJson,
 } from "../_shared/razorpay.ts"
 
-// total_count ≈ 100 years of billing cycles — effectively "until cancelled".
-const TOTAL_COUNT: Record<string, number> = { monthly: 1200, yearly: 100 }
+// Razorpay caps end_time at ~4 765 046 400 (≈ year 2211).  With the current
+// time ~1.786 × 10⁹ the max total_count is ≈1 149 months or ≈94 years.
+// Use 600/50 (≈ 50 years each) — well within limits and effectively "until
+// cancelled" since the webhook + cancel endpoint handle early termination.
+const TOTAL_COUNT: Record<string, number> = { monthly: 600, yearly: 50 }
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders })
