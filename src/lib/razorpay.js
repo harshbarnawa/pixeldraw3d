@@ -35,17 +35,31 @@ async function invokeEdge(name, body) {
 function loadRazorpay() {
   return new Promise((resolve, reject) => {
     if (window.Razorpay) return resolve(window.Razorpay)
-    const existing = document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]')
-    if (existing) {
-      existing.addEventListener("load", () => resolve(window.Razorpay))
-      return
-    }
+
+    const SRC = "https://checkout.razorpay.com/v1/checkout.js"
+    const existing = document.querySelector(`script[src="${SRC}"]`)
+
+    // If a previous load attempt already defined Razorpay, resolve immediately.
+    if (existing && window.Razorpay) return resolve(window.Razorpay)
+
+    // If a script tag exists but the load already failed (Razorpay still undefined),
+    // remove it so we can retry with a fresh tag.
+    if (existing && !window.Razorpay) existing.remove()
+
     const s = document.createElement("script")
-    s.src = "https://checkout.razorpay.com/v1/checkout.js"
+    s.src = SRC
     s.async = true
     s.onload = () => resolve(window.Razorpay)
-    s.onerror = () => reject(new Error("couldn't load razorpay"))
+    s.onerror = () => {
+      s.remove()
+      reject(new Error("couldn't load razorpay — check your connection or ad blocker"))
+    }
     document.body.appendChild(s)
+
+    // Safety net: never hang forever — resolve after 8s even if script stalls.
+    setTimeout(() => {
+      if (window.Razorpay) resolve(window.Razorpay)
+    }, 8000)
   })
 }
 
