@@ -13,6 +13,13 @@ const SubscriptionPage = lazy(() => import("./pages/SubscriptionPage.jsx"))
 const CommunityPage = lazy(() => import("./pages/CommunityPage.jsx"))
 const PublicProfilePage = lazy(() => import("./pages/PublicProfilePage.jsx"))
 const DesignPage = lazy(() => import("./pages/DesignPage.jsx"))
+const AboutPage = lazy(() => import("./pages/AboutPage.jsx"))
+const PrivacyPage = lazy(() => import("./pages/PrivacyPage.jsx"))
+const TermsPage = lazy(() => import("./pages/TermsPage.jsx"))
+const ContactPage = lazy(() => import("./pages/ContactPage.jsx"))
+const TemplatesPage = lazy(() => import("./pages/TemplatesPage.jsx"))
+const GuidesPage = lazy(() => import("./pages/GuidesPage.jsx"))
+const GuidePage = lazy(() => import("./pages/GuidePage.jsx"))
 
 function PageFallback() {
   return (
@@ -48,6 +55,13 @@ export default function App() {
               <Route path="/my-designs" element={<MyDesignsPage />} />
               <Route path="/subscribe" element={<SubscriptionPage />} />
               <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/about" element={<AboutPage />} />
+              <Route path="/privacy" element={<PrivacyPage />} />
+              <Route path="/terms" element={<TermsPage />} />
+              <Route path="/contact" element={<ContactPage />} />
+              <Route path="/templates" element={<TemplatesPage />} />
+              <Route path="/guides" element={<GuidesPage />} />
+              <Route path="/guides/:slug" element={<GuidePage />} />
               <Route path="*" element={<HomePage />} />
             </Routes>
           </Suspense>

@@ -131,3 +131,10 @@ export const PRESETS = [
 ]
 
 export const DEFAULT_PRESET = PRESETS.find((p) => p.name === "Heart")
+
+// Public contact address used by the contact/privacy/terms pages.
+// TODO: replace with a real inbox before launch.
+export const CONTACT_EMAIL = "harshbarnawa.info@gmail.com"
+
+// Developer credit shown in the footer, about, and contact pages.
+export const DEV_URL = "https://harshbarnawa.vercel.app/"

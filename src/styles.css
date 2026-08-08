@@ -367,6 +367,15 @@ textarea {
 }
 
 @media (max-width: 960px) {
+  /* nav: prevent wrapping at intermediate widths */
+  .tagline { display: none; }
+  .nav-link {
+    font-size: 11px;
+    padding: 4px 8px;
+    margin-left: 0;
+    letter-spacing: 0.5px;
+  }
+
   .editor-row {
     flex-direction: column;
   }
@@ -398,11 +407,12 @@ textarea {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  margin-top: 18px;
   padding: 14px 18px;
-  background: var(--surface);
   border: 3px solid var(--ink);
+  background: var(--surface);
   box-shadow: 6px 6px 0 var(--shadow);
+  order: 3; /* desktop: place after viewport (slate | viewport on row 1) */
+  grid-column: 1 / -1; /* span both columns so it sits full-width below */
 }
 
 .palette-strip .px-label {
@@ -2154,4 +2164,343 @@ button.comm-stat:hover {
   background: var(--surface);
   padding: 32px 20px;
   text-align: center;
+}
+
+/* ============================================================
+   content pages (about / privacy / terms / contact / guides)
+   ============================================================ */
+
+/* shared prose block used by the legal + guide pages */
+.legal h3 {
+  margin-top: 0;
+}
+
+.legal p {
+  margin: 0 0 10px;
+}
+
+.legal p:last-child {
+  margin-bottom: 0;
+}
+
+/* ---------- homepage intro hero ---------- */
+
+.px-hero {
+  border: 3px solid var(--ink);
+  background: var(--surface);
+  box-shadow: 4px 4px 0 var(--shadow);
+  padding: 22px 26px;
+  margin-bottom: 26px;
+}
+
+.px-hero-title {
+  font-family: var(--font-head);
+  font-size: 30px;
+  line-height: 1.1;
+  margin: 4px 0 8px;
+  color: var(--ink);
+  text-transform: uppercase;
+}
+
+.px-hero-sub {
+  font-size: 20px;
+  color: var(--ink-soft);
+  margin: 0 0 16px;
+  max-width: 560px;
+}
+
+.px-hero-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* ---------- about page feature cards ---------- */
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 16px;
+  margin: 22px 0;
+}
+
+.feature-card {
+  text-align: center;
+}
+
+.feature-card-emoji {
+  font-size: 34px;
+  line-height: 1;
+  margin-bottom: 8px;
+}
+
+.feature-card-body {
+  margin: 6px 0 0;
+}
+
+/* ---------- footer link row ---------- */
+
+.px-footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  justify-content: center;
+  margin: 10px 0;
+}
+
+.px-footer-links a {
+  color: var(--ink-soft);
+  text-decoration: none;
+  font-size: 18px;
+}
+
+.px-footer-links a:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+/* ---------- templates page ---------- */
+
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 16px;
+}
+
+.template-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  color: var(--ink);
+  text-align: center;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.template-card:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0 var(--shadow);
+}
+
+.template-preview {
+  display: grid;
+  gap: 1px;
+  width: 100%;
+  max-width: 120px;
+  padding: 4px;
+  background: var(--surface-2);
+  border: 2px solid var(--border);
+}
+
+.template-preview-row {
+  display: flex;
+  gap: 1px;
+}
+
+.template-preview-cell {
+  flex: 1 1 0;
+  aspect-ratio: 1;
+  background: transparent;
+}
+
+.template-card-name {
+  font-family: var(--font-head);
+  font-size: 13px;
+}
+
+.template-card-cta {
+  font-size: 16px;
+  color: var(--ink-soft);
+}
+
+.template-card:hover .template-card-cta {
+  color: var(--ink);
+}
+
+/* ---------- guides pages ---------- */
+
+.guide-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.guide-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  text-decoration: none;
+  color: var(--ink);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.guide-card:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0 var(--shadow);
+}
+
+.guide-card-emoji {
+  font-size: 34px;
+  flex-shrink: 0;
+}
+
+.guide-card-body {
+  flex: 1;
+}
+
+.guide-card-body p {
+  margin: 6px 0 0;
+}
+
+.guide-card-arrow {
+  font-size: 24px;
+  color: var(--ink-soft);
+  flex-shrink: 0;
+}
+
+/* ---------- contact page ---------- */
+
+.contact-card {
+  text-align: center;
+}
+
+/* ============================================================
+   mobile responsive fixes
+   ============================================================ */
+
+/* --- ≤760px: compact nav (logo icon only, small links) so the
+      links + profile button never wrap to a second line --- */
+@media (max-width: 760px) {
+  .px-nav-inner {
+    padding: 6px 10px;
+    gap: 5px;
+  }
+  .logo .logo-text,
+  .logo .sparkle {
+    display: none;
+  }
+  .nav-link {
+    font-size: 9px;
+    padding: 3px 6px;
+    margin-left: 0;
+    letter-spacing: 0.2px;
+    border-width: 1.5px;
+  }
+  .nav-user {
+    margin-left: auto;
+  }
+  .user-btn {
+    padding: 3px 6px;
+    font-size: 9px;
+    border-width: 1.5px;
+  }
+  .avatar {
+    width: 20px;
+    height: 20px;
+  }
+}
+
+/* --- mobile: everything smaller + navbar one line --- */
+@media (max-width: 640px) {
+  /* navbar: all one line, compact */
+  .px-nav-inner {
+    padding: 6px 10px;
+    gap: 5px;
+  }
+  .logo .logo-text,
+  .logo .sparkle {
+    display: none;
+  }
+  .nav-link {
+    font-size: 9px;
+    padding: 3px 6px;
+    margin-left: 0;
+    letter-spacing: 0.2px;
+    border-width: 1.5px;
+  }
+  .nav-user {
+    margin-left: auto;
+  }
+  .user-btn {
+    padding: 3px 6px;
+    font-size: 9px;
+    border-width: 1.5px;
+  }
+  .avatar {
+    width: 20px;
+    height: 20px;
+  }
+
+  /* hero: tiny */
+  .px-hero {
+    padding: 10px 14px;
+    margin-bottom: 12px;
+  }
+  .px-hero-title {
+    font-size: 16px;
+    margin: 2px 0 4px;
+  }
+  .px-hero-sub {
+    font-size: 14px;
+    margin: 0 0 8px;
+  }
+  .px-hero-actions {
+    gap: 5px;
+  }
+  .px-hero-actions .px-btn {
+    padding: 5px 9px;
+    font-size: 10px;
+  }
+
+  /* global zoom out */
+  body {
+    font-size: 16px;
+  }
+  .app-main {
+    padding: 10px 12px 60px;
+  }
+  .px-section-title {
+    font-size: 17px;
+  }
+  .px-section-sub {
+    font-size: 14px;
+  }
+  .px-panel {
+    border-width: 2px;
+  }
+  .px-btn {
+    font-size: 10px;
+    padding: 6px 10px;
+    border-width: 2px;
+    box-shadow: 2px 2px 0 var(--ink);
+  }
+  .px-btn--sm {
+    font-size: 9px;
+    padding: 4px 7px;
+  }
+  .px-kicker {
+    font-size: 9px;
+  }
+  .tool-row {
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .palette-strip {
+    padding: 8px 10px;
+    gap: 5px;
+  }
+  .palette-swatch {
+    width: 20px;
+    height: 20px;
+    border-width: 2px;
+  }
+}
+
+/* --- 960px & below: editor grid is 1 column, palette drops `order` and
+      sits in its natural DOM spot — between slate & viewport --- */
+@media (max-width: 960px) {
+  .palette-strip {
+    order: 0;
+  }
 }

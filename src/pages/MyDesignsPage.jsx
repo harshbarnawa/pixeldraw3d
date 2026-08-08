@@ -80,7 +80,13 @@ function MyDesignsInner() {
 
   const handleDelete = async (id) => {
     const res = await deleteDesign(id)
-    showToast(res.ok ? "design deleted" : "couldn't delete")
+    if (res.ok) {
+      // clean up any community post referencing this design
+      deletePostByDesign(id).catch(() => {})
+      showToast("design deleted")
+    } else {
+      showToast("couldn't delete")
+    }
   }
 
   const handleRestored = (design) => {

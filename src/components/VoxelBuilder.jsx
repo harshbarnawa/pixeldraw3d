@@ -437,6 +437,37 @@ function VoxelBuilder({
             </div>
           </div>
 
+          {/* palette strip — DOM between slate & viewport so mobile shows slate → palette → viewport */}
+          <div className="palette-strip">
+              <span className="px-label">Color</span>
+              {palette.map((col) => (
+                <button
+                  key={col}
+                  onClick={() => setActiveColor(col)}
+                  title={col}
+                  aria-label={`Pick color ${col}`}
+                  className={`palette-swatch ${activeColor === col ? "palette-swatch--active" : ""}`}
+                  style={{ backgroundColor: col }}
+                />
+              ))}
+              <input
+                type="color"
+                value={activeColor}
+                onChange={(e) => setActiveColor(e.target.value)}
+                title="Custom color"
+                aria-label="Custom color picker"
+                className="palette-custom"
+                style={{ backgroundColor: activeColor }}
+              />
+              <button
+                className="px-btn px-btn--sm px-btn--lavender"
+                style={{ marginLeft: "auto" }}
+                onClick={() => setColorOpen(true)}
+              >
+                🎨 color
+              </button>
+          </div>
+
           {/* 3D viewport */}
           <div className="px-panel">
             <div className="px-panel--pad" style={{ paddingBottom: 0 }}>
@@ -546,37 +577,6 @@ function VoxelBuilder({
             </div>
           </div>
         </div>
-      </div>
-
-      {/* palette strip */}
-      <div className="palette-strip">
-        <span className="px-label">Color</span>
-        {palette.map((col) => (
-          <button
-            key={col}
-            onClick={() => setActiveColor(col)}
-            title={col}
-            aria-label={`Pick color ${col}`}
-            className={`palette-swatch ${activeColor === col ? "palette-swatch--active" : ""}`}
-            style={{ backgroundColor: col }}
-          />
-        ))}
-        <input
-          type="color"
-          value={activeColor}
-          onChange={(e) => setActiveColor(e.target.value)}
-          title="Custom color"
-          aria-label="Custom color picker"
-          className="palette-custom"
-          style={{ backgroundColor: activeColor }}
-        />
-        <button
-          className="px-btn px-btn--sm px-btn--lavender"
-          style={{ marginLeft: "auto" }}
-          onClick={() => setColorOpen(true)}
-        >
-          🎨 color
-        </button>
       </div>
 
       <ColorDialog open={colorOpen} onClose={() => setColorOpen(false)} onAdd={handleAddColor} />

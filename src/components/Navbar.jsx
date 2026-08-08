@@ -20,6 +20,12 @@ export default function Navbar() {
         <Link to="/community" className="nav-link">
           explore
         </Link>
+        <Link to="/templates" className="nav-link">
+          templates
+        </Link>
+        <Link to="/guides" className="nav-link">
+          guides
+        </Link>
         <UserMenu />
       </div>
     </nav>

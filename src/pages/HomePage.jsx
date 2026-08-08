@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { useSearchParams } from "react-router-dom"
+import { Link, useSearchParams } from "react-router-dom"
 import PageShell from "../components/PageShell.jsx"
 import SectionHead from "../components/SectionHead.jsx"
 import VoxelBuilder from "../components/VoxelBuilder.jsx"
@@ -14,7 +14,8 @@ import { useDesigns } from "../context/DesignsContext.jsx"
 import { FEATURE, hasFeature } from "../lib/plans.js"
 import { DEFAULT_PRESET, DEFAULT_SIZE, PALETTE } from "../constants.js"
 import { emptyGrid, presetToGrid } from "../lib/grid.js"
-import { fetchPublicDesignRow } from "../lib/community.js"
+import { TEMPLATES } from "../data/templates.js"
+import { fetchPublicDesignRow, deletePostByDesign } from "../lib/community.js"
 import {
   downloadDesigns,
   loadCustomColors,
@@ -99,6 +100,26 @@ export default function HomePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Templates: /?template=<name> loads a starter from the Templates page as a
+  // fresh editable copy. activeDesignId stays null so the next save creates a
+  // NEW design — loading a template can never touch an existing design.
+  useEffect(() => {
+    const name = searchParams.get("template")
+    if (!name) return
+    const preset = TEMPLATES.find((t) => t.name.toLowerCase() === name.toLowerCase())
+    if (!preset) {
+      showToast("that template isn't available")
+      return
+    }
+    setSearchParams({}, { replace: true })
+    setGrid(presetToGrid(preset))
+    setGridSize(10) // all templates are 10×10
+    setActiveDesignId(null)
+    scrollTo("editor")
+    showToast(`loaded “${preset.name}” template`)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // ----- autosave (PLUS feature) + active-design tracking -----
   const { profile } = useAuth()
   const canAutosave = hasFeature(profile, FEATURE.AUTOSAVE)
@@ -177,7 +198,13 @@ export default function HomePage() {
 
   const handleDelete = async (id) => {
     const res = await deleteDesign(id)
-    showToast(res.ok ? "design deleted" : "couldn't delete")
+    if (res.ok) {
+      // clean up any community post referencing this design
+      deletePostByDesign(id).catch(() => {})
+      showToast("design deleted")
+    } else {
+      showToast("couldn't delete")
+    }
   }
 
   const handleImportFile = async (file) => {
@@ -211,6 +238,23 @@ export default function HomePage() {
 
   return (
     <PageShell>
+      {/* intro — homepage description so the site reads like a real thing */}
+      <section className="px-hero">
+        <p className="px-kicker">pixeldraw3d</p>
+        <h1 className="px-hero-title">draw a pixel, build a world</h1>
+        <p className="px-hero-sub">
+          a pastel pixel-art studio — paint on a 2D slate, watch every pixel pop into a 3D cube.
+        </p>
+        <div className="px-hero-actions">
+          <button type="button" className="px-btn px-btn--mint" onClick={() => scrollTo("editor")}>
+            start drawing ↓
+          </button>
+          <Link to="/templates" className="px-btn px-btn--white">
+            browse templates
+          </Link>
+        </div>
+      </section>
+
       {/* editor */}
       <section id="editor" className="px-section">
         <SectionHead
