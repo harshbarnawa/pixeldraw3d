@@ -27,11 +27,25 @@ import {
   safeJson,
 } from "../_shared/razorpay.ts"
 
-// Razorpay caps end_time at ~4 765 046 400 (≈ year 2211).  With the current
-// time ~1.786 × 10⁹ the max total_count is ≈1 149 months or ≈94 years.
-// Use 600/50 (≈ 50 years each) — well within limits and effectively "until
-// cancelled" since the webhook + cancel endpoint handle early termination.
-const TOTAL_COUNT: Record<string, number> = { monthly: 600, yearly: 50 }
+// Razorpay Checkout generates a UPI mandate + QR for the subscription's first
+// payment, and a UPI QR's expire_at cannot be more than 30 years out ("expire_at
+// cannot be more than 30 years for upi"). The subscription's end_time (= first
+// charge + total_count × period) feeds that expiry, so total_count must keep
+// end_time inside the 30-year UPI window. These counts are derived from the UPI
+// limit and the billing period — not a hardcoded timestamp, so they stay valid
+// regardless of the current date — with ~15% margin for calendar rounding. The
+// webhook + cancel endpoint handle early termination, so this is still
+// effectively "until cancelled".
+const UPI_MAX_SECONDS = 30 * 365 * 24 * 60 * 60 // 30 years
+const PERIOD_SECONDS: Record<string, number> = {
+  monthly: 30 * 24 * 60 * 60,
+  yearly: 365 * 24 * 60 * 60,
+}
+const TOTAL_COUNT: Record<string, number> = {
+  // ≈310 months ≈ 25.8 years, and ≈25 years — both safely under the 30-year UPI cap.
+  monthly: Math.max(1, Math.floor((UPI_MAX_SECONDS * 0.85) / PERIOD_SECONDS.monthly)),
+  yearly: Math.max(1, Math.floor((UPI_MAX_SECONDS * 0.85) / PERIOD_SECONDS.yearly)),
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders })
