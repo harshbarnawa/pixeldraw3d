@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 import PageShell from "../components/PageShell.jsx"
-import VoxelViewport from "../components/VoxelViewport.jsx"
 import { renderGridToCanvas } from "../lib/imageToPixel.js"
 import { copyDesignLink } from "../lib/share.js"
 import { useToast } from "../components/useToast.js"
@@ -30,7 +29,6 @@ export default function DesignPage() {
   const { toast, showToast } = useToast()
   const previewRef = useRef(null)
   const likeBusy = useRef(false)
-  const [view, setView] = useState("pixel")
   const [design, setDesign] = useState(null)
   const [liked, setLiked] = useState(false)
   const [comments, setComments] = useState([])
@@ -67,10 +65,10 @@ export default function DesignPage() {
   useEffect(() => { load() }, [load])
 
   useEffect(() => {
-    if (view === "pixel" && design?.grid?.length && previewRef.current) {
+    if (!loading && design?.grid?.length && previewRef.current) {
       renderGridToCanvas(previewRef.current, design.grid)
     }
-  }, [design?.grid, view])
+  }, [design?.grid, loading])
 
   useEffect(() => {
     if (!supabase || !design?.id) return
@@ -168,7 +166,7 @@ export default function DesignPage() {
         <div className="px-panel px-panel--pad social-empty">
           <p className="muted">{error || "This design is private, unavailable or has been deleted."}</p>
           {error && <button type="button" className="px-btn px-btn--sm px-btn--white" onClick={load}>retry</button>}
-          <Link to="/community?tab=explore" className="px-btn px-btn--sm px-btn--mint">back to explore</Link>
+          <Link to="/community" className="px-btn px-btn--sm px-btn--mint">back to feed</Link>
         </div>
       </div>
     </PageShell>
@@ -193,27 +191,10 @@ export default function DesignPage() {
               </Link>
             )}
             <h1 className="px-section-title" style={{ margin: 0 }}>{design.name}</h1>
-            <div className="social-detail-switch">
-              <button type="button" className={"px-btn px-btn--sm " + (view === "pixel" ? "px-btn--active" : "px-btn--white")} onClick={() => setView("pixel")}>2D artwork</button>
-              <button type="button" className={"px-btn px-btn--sm " + (view === "3d" ? "px-btn--active" : "px-btn--white")} onClick={() => setView("3d")}>3D model</button>
-              <span className="muted">{design.size}×{design.size}</span>
+            <p className="muted" style={{ fontSize: 12, margin: 0 }}>{design.size}×{design.size} pixel artwork</p>
+            <div className="social-detail-art">
+              <canvas ref={previewRef} width={640} height={640} aria-label={"Pixel art preview for " + design.name} />
             </div>
-            {view === "pixel" ? (
-              <div className="social-detail-art">
-                <canvas ref={previewRef} width={640} height={640} aria-label={"Pixel art preview for " + design.name} />
-              </div>
-            ) : (
-              <div className="social-detail-3d">
-                <VoxelViewport
-                  grid={design.grid}
-                  size={design.size}
-                  extrude={design.extrude}
-                  randomLift={design.randomLift}
-                  showGrid={false}
-                  autoRotate
-                />
-              </div>
-            )}
             <div className="social-detail-actions">
               <button type="button" className={"px-btn px-btn--sm " + (liked ? "px-btn--active" : "px-btn--white")} onClick={toggleLike}>
                 {liked ? "♥ liked" : "♡ like"} · {design.likeCount ?? 0}

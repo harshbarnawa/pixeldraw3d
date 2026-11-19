@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Link, useSearchParams } from "react-router-dom"
+import { Link } from "react-router-dom"
 import PageShell from "../components/PageShell.jsx"
 import SectionHead from "../components/SectionHead.jsx"
 import PostCard from "../components/PostCard.jsx"
@@ -25,9 +25,6 @@ import {
 export default function CommunityPage() {
   const { user } = useAuth()
   const { toast, showToast } = useToast()
-  const [searchParams, setSearchParams] = useSearchParams()
-  const tab = searchParams.get("tab") === "explore" ? "explore" : "feed"
-  const [sort, setSort] = useState("recent")
   const [posts, setPosts] = useState([])
   const [likedDesignIds, setLikedDesignIds] = useState(new Set())
   const [likedPostIds, setLikedPostIds] = useState(new Set())
@@ -41,18 +38,57 @@ export default function CommunityPage() {
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
     try {
-      const next = tab === "explore"
-        ? (await fetchPublicDesigns({ sort: sort === "trending" ? "popular" : "recent" })).map(asDesignPost)
-        : await fetchPublicPosts({ sort })
+      const [designResult, postResult] = await Promise.allSettled([
+        fetchPublicDesigns({ sort: "recent", limit: 100 }),
+        fetchPublicPosts({ sort: "recent", limit: 100 }),
+      ])
+      if (designResult.status === "rejected" && postResult.status === "rejected") {
+        throw designResult.reason || postResult.reason
+      }
+
+      const designs = designResult.status === "fulfilled" ? designResult.value : []
+      const published = postResult.status === "fulfilled" ? postResult.value : []
+      const byDesign = new Map(designs.map((design) => [design.id, asDesignPost(design)]))
+      const attached = new Set()
+      const textPosts = []
+
+      for (const post of published) {
+        if (!post.design_id) {
+          textPosts.push(post)
+          continue
+        }
+        const linkedDesign = post.designs
+        if (!linkedDesign?.is_public || attached.has(linkedDesign.id)) continue
+        attached.add(linkedDesign.id)
+
+        const existing = byDesign.get(linkedDesign.id)
+        byDesign.set(linkedDesign.id, {
+          ...(existing || post),
+          id: post.id,
+          synthetic: false,
+          created_at: post.created_at,
+          body: post.body || "",
+          user_id: post.user_id,
+          designs: existing?.designs || linkedDesign,
+          profiles: post.profiles || existing?.profiles,
+        })
+      }
+
+      const next = [...byDesign.values(), ...textPosts]
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
       setPosts(next)
-      setError("")
+      setError(
+        designResult.status === "rejected" || postResult.status === "rejected"
+          ? "Some artwork or captions could not load. Try refresh."
+          : "",
+      )
     } catch (e) {
-      setError(e.message || "Couldn't load the community")
+      setError(e.message || "Couldn't load the feed")
       if (!silent) setPosts([])
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [tab, sort])
+  }, [])
 
   useEffect(() => {
     load()
@@ -77,15 +113,12 @@ export default function CommunityPage() {
 
   useEffect(() => {
     if (!supabase) return
-    const channel = supabase.channel("community-social-" + tab)
-      .on("postgres_changes", {
-        event: "*",
-        schema: "public",
-        table: tab === "feed" ? "posts" : "designs",
-      }, () => load(true))
+    const channel = supabase.channel("community-unified-feed")
+      .on("postgres_changes", { event: "*", schema: "public", table: "posts" }, () => load(true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "designs" }, () => load(true))
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [tab, load])
+  }, [load])
 
   useEffect(() => {
     if (!term.trim()) {
@@ -171,11 +204,6 @@ export default function CommunityPage() {
     }
   }
 
-  const setTab = (next) => {
-    setSort("recent")
-    setSearchParams(next === "explore" ? { tab: "explore" } : {})
-  }
-
   const renderAvatar = (author) => author.profile_photo ? (
     <img src={author.profile_photo} alt="" className="comm-avatar" />
   ) : (
@@ -187,13 +215,11 @@ export default function CommunityPage() {
   return (
     <PageShell>
       <div className="px-page social-page">
-        <SectionHead kicker="06 · community" title={tab} sub={tab === "feed" ? "New posts and artwork shared by the community." : "Discover every public pixel design."} />
+        <SectionHead kicker="06 · community" title="feed" sub="Public artwork, creator posts and conversations in one place." />
 
-        <div className="social-feed-tabs">
-          <button type="button" className={"px-btn px-btn--sm " + (tab === "feed" ? "px-btn--active" : "px-btn--white")} onClick={() => setTab("feed")}>feed</button>
-          <button type="button" className={"px-btn px-btn--sm " + (tab === "explore" ? "px-btn--active" : "px-btn--white")} onClick={() => setTab("explore")}>explore</button>
-          <button type="button" className={"px-btn px-btn--sm " + (sort === "trending" ? "px-btn--active" : "px-btn--white")} onClick={() => setSort((value) => value === "trending" ? "recent" : "trending")}>popular</button>
-          <button type="button" className="px-btn px-btn--sm px-btn--white" onClick={() => load()} aria-label="Refresh posts">refresh</button>
+        <div className="social-feed-toolbar">
+          <span className="muted">Latest from the community</span>
+          <button type="button" className="px-btn px-btn--sm px-btn--white" onClick={() => load()} aria-label="Refresh feed">refresh</button>
         </div>
 
         <div className="comm-search-bar">
@@ -232,8 +258,7 @@ export default function CommunityPage() {
           <div className="px-panel px-panel--pad social-empty"><p className="muted">loading community…</p></div>
         ) : posts.length === 0 ? (
           <div className="px-panel px-panel--pad social-empty">
-            <p className="muted">{tab === "feed" ? "No posts yet. Explore public designs or publish your artwork." : "No public designs yet. Publish one from My Designs."}</p>
-            {tab === "feed" && <button className="px-btn px-btn--sm px-btn--mint" onClick={() => setTab("explore")}>explore designs</button>}
+            <p className="muted">No artwork posted yet. Publish a design from My Designs to start the feed.</p>
           </div>
         ) : (
           <div className="social-feed">
@@ -244,7 +269,7 @@ export default function CommunityPage() {
                 liked={post.designs ? likedDesignIds.has(post.designs.id) : likedPostIds.has(post.id)}
                 onToggleLike={toggleLike}
                 onShare={share}
-                onDelete={tab === "feed" ? remove : undefined}
+                onDelete={post.designs ? undefined : remove}
                 currentUserId={user?.id}
               />
             ))}
