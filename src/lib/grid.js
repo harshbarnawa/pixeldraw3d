@@ -9,6 +9,9 @@ export function cloneGrid(grid) {
 }
 
 export function presetToGrid(preset) {
+  if (Array.isArray(preset.grid) && preset.grid.length) {
+    return preset.grid.map((row) => [...row])
+  }
   return preset.rows.map((row) =>
     row.split("").map((ch) => (ch.toLowerCase() === "x" ? preset.color : null)),
   )

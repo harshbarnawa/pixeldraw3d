@@ -113,7 +113,9 @@ export default function HomePage() {
     }
     setSearchParams({}, { replace: true })
     setGrid(presetToGrid(preset))
-    setGridSize(10) // all templates are 10×10
+    setGridSize(preset.size || preset.grid?.length || preset.rows?.length || DEFAULT_SIZE)
+    setExtrude(2)
+    setRandomLift(0)
     setActiveDesignId(null)
     scrollTo("editor")
     showToast(`loaded “${preset.name}” template`)
