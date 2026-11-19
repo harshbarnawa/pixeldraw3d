@@ -1,27 +1,54 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { PALETTE, RUBIKS_PALETTE } from "../constants.js"
-import { convertToGrid, fileToImage, renderGridToCanvas } from "../lib/imageToPixel.js"
+import { convertToGrid, fileToImage, getGridColorKey, renderGridToCanvas, renderTraceToCanvas } from "../lib/imageToPixel.js"
+import "./ImageImporter.css"
 import UpgradeDialog from "./UpgradeDialog.jsx"
 import { useAuth } from "../context/AuthContext.jsx"
 import { FEATURE, hasFeature } from "../lib/plans.js"
 import { imageImportUsage, recordImageImport } from "../lib/usage.js"
 
-const PREVIEW_PX = 320
+const AXIS = 32
+
+function downloadCanvas(canvas, name) {
+  if (!canvas) return
+  canvas.toBlob((blob) => {
+    if (!blob) return
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = name
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }, "image/png")
+}
 
 // Props: onApply({ grid, size }), palette (shared with the editor)
 function ImageImporter({ onApply, palette = PALETTE }) {
   const [img, setImg] = useState(null)
   const [fileName, setFileName] = useState("")
-  const [gridSize, setGridSize] = useState(32)
+  const [gridSize, setGridSize] = useState(100)
   const [snap, setSnap] = useState(true)
   const [cubeMode, setCubeMode] = useState(false)
+  const [mode, setMode] = useState("pixel")
+  const [fit, setFit] = useState("contain")
+  const [paletteMode, setPaletteMode] = useState("auto")
+  const [paletteSize, setPaletteSize] = useState(16)
+  const [dither, setDither] = useState("none")
+  const [zoom, setZoom] = useState(1)
+  const [showLines, setShowLines] = useState(true)
+  const [showCodes, setShowCodes] = useState(false)
+  const [hovered, setHovered] = useState(null)
   const snapPalette = cubeMode ? RUBIKS_PALETTE : palette
+  const effectivePaletteMode = cubeMode ? "editor" : paletteMode
   const [dragOver, setDragOver] = useState(false)
   const [error, setError] = useState(null)
   const [showUpgrade, setShowUpgrade] = useState(false)
 
   const fileInputRef = useRef(null)
   const canvasRef = useRef(null)
+  const scrollRef = useRef(null)
 
   // ----- member-only feature: guests are blocked, signed-in users get a daily quota -----
   const { profile, isAuthed, refreshProfile, signInWithGoogle } = useAuth()
@@ -45,6 +72,8 @@ function ImageImporter({ onApply, palette = PALETTE }) {
       const image = await fileToImage(file)
       setImg(image)
       setFileName(file.name)
+      setHovered(null)
+      setZoom(1)
       setError(null)
       if (isAuthed) {
         await recordImageImport(profile)
@@ -66,7 +95,7 @@ function ImageImporter({ onApply, palette = PALETTE }) {
     window.addEventListener("paste", onPaste)
     return () => window.removeEventListener("paste", onPaste)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [canImport, usage.remaining, isAuthed, profile, refreshProfile])
 
   // recompute the grid whenever inputs change
   const [result, setResult] = useState(null)
@@ -75,8 +104,24 @@ function ImageImporter({ onApply, palette = PALETTE }) {
       setResult(null)
       return
     }
-    setResult(convertToGrid({ img, size: gridSize, snap, palette: snapPalette, dither: "none" }))
-  }, [img, gridSize, snap, snapPalette])
+    try {
+      setResult(convertToGrid({
+        img,
+        size: gridSize,
+        mode,
+        fit,
+        snap,
+        palette: snapPalette,
+        paletteMode: effectivePaletteMode,
+        colors: paletteSize,
+        dither: mode === "photo" ? dither : "none",
+      }))
+      setError(null)
+    } catch {
+      setResult(null)
+      setError("Couldn't process that image")
+    }
+  }, [img, gridSize, mode, fit, snap, snapPalette, effectivePaletteMode, paletteSize, dither])
 
   // Cube mode uses the full-gamut palette; turning it on implies snapping
   const toggleCube = () => {
@@ -87,10 +132,55 @@ function ImageImporter({ onApply, palette = PALETTE }) {
     })
   }
 
-  // draw live preview
+  const colorKey = useMemo(
+    () => result ? getGridColorKey(result.grid) : { total: 0, items: [] },
+    [result],
+  )
+  const baseCell = gridSize > 70 ? 4 : gridSize > 40 ? 6 : 10
+  const cellSize = baseCell * zoom
+  const canvasSide = AXIS + gridSize * cellSize
+
   useEffect(() => {
-    if (canvasRef.current && result) renderGridToCanvas(canvasRef.current, result.grid)
-  }, [result])
+    if (canvasRef.current && result) {
+      renderTraceToCanvas(canvasRef.current, result.grid, {
+        cellSize,
+        showGrid: showLines,
+        showCodes,
+        colorKey: colorKey.items,
+        axis: AXIS,
+      })
+    }
+  }, [result, cellSize, showLines, showCodes, colorKey])
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = 0
+      scrollRef.current.scrollLeft = 0
+    }
+  }, [img, gridSize])
+
+  const handlePointerMove = (event) => {
+    if (!canvasRef.current || !result) return
+    const rect = canvasRef.current.getBoundingClientRect()
+    const x = (event.clientX - rect.left) * canvasRef.current.width / rect.width - AXIS
+    const y = (event.clientY - rect.top) * canvasRef.current.height / rect.height - AXIS
+    const col = Math.floor(x / cellSize)
+    const row = Math.floor(y / cellSize)
+    if (row < 0 || col < 0 || row >= gridSize || col >= gridSize) {
+      setHovered(null)
+    } else {
+      setHovered({ row: row + 1, col: col + 1, hex: result.grid[row][col] })
+    }
+  }
+
+  const downloadPixelImage = () => {
+    if (!result) return
+    const canvas = document.createElement("canvas")
+    canvas.width = gridSize
+    canvas.height = gridSize
+    renderGridToCanvas(canvas, result.grid)
+    downloadCanvas(canvas, "pixeldraw3d-" + gridSize + "x" + gridSize + ".png")
+  }
 
   return (
     <div className="importer-layout">
@@ -173,6 +263,13 @@ function ImageImporter({ onApply, palette = PALETTE }) {
         {error && <p className="muted" style={{ color: "#e11d48" }}>{error}</p>}
 
         <div className="opt-grid">
+          <div className="trace-field">
+            <label className="px-label" htmlFor="tracer-mode">Image type</label>
+            <select id="tracer-mode" className="trace-select" value={mode} onChange={(event) => setMode(event.target.value)}>
+              <option value="pixel">Pixel art — preserve sharp edges</option>
+              <option value="photo">Photo — smooth sampling</option>
+            </select>
+          </div>
           <div>
             <div className="range-caption">
               <span className="px-label">Pixel grid</span>
@@ -186,8 +283,27 @@ function ImageImporter({ onApply, palette = PALETTE }) {
               onChange={(e) => setGridSize(Number(e.target.value))}
               className="px-range"
             />
+            <div className="trace-sizes">
+              {[10, 20, 30, 40, 50, 100].map((value) => (
+                <button
+                  type="button"
+                  key={value}
+                  className={["trace-pill", gridSize === value ? "trace-pill--active" : ""].join(" ")}
+                  onClick={() => setGridSize(value)}
+                >
+                  {value}×{value}
+                </button>
+              ))}
+            </div>
           </div>
 
+          <div className="trace-field">
+            <label className="px-label" htmlFor="tracer-fit">Image fit</label>
+            <select id="tracer-fit" className="trace-select" value={fit} onChange={(event) => setFit(event.target.value)}>
+              <option value="contain">Contain — keep entire image</option>
+              <option value="cover">Cover — fill grid and crop</option>
+            </select>
+          </div>
           <div className="opt-row">
             <span className="px-label">
               <span style={{ marginRight: 6 }}>🎲</span>Cube mode — Rubik's cube colors
@@ -211,6 +327,33 @@ function ImageImporter({ onApply, palette = PALETTE }) {
               {snap ? "on" : "off"}
             </button>
           </div>
+          {snap && !cubeMode && (
+            <div className="trace-field">
+              <label className="px-label" htmlFor="tracer-palette">Color palette</label>
+              <select id="tracer-palette" className="trace-select" value={paletteMode} onChange={(event) => setPaletteMode(event.target.value)}>
+                <option value="auto">Extract colors from image</option>
+                <option value="editor">Use editor palette</option>
+              </select>
+            </div>
+          )}
+          {snap && !cubeMode && paletteMode === "auto" && (
+            <div className="trace-field">
+              <label className="px-label" htmlFor="tracer-colors">Maximum colors</label>
+              <select id="tracer-colors" className="trace-select" value={paletteSize} onChange={(event) => setPaletteSize(Number(event.target.value))}>
+                {[8, 16, 32, 64].map((value) => <option key={value} value={value}>{value} colors</option>)}
+              </select>
+            </div>
+          )}
+          {mode === "photo" && snap && (
+            <div className="trace-field">
+              <label className="px-label" htmlFor="tracer-dither">Dithering</label>
+              <select id="tracer-dither" className="trace-select" value={dither} onChange={(event) => setDither(event.target.value)}>
+                <option value="none">None</option>
+                <option value="bayer">Ordered</option>
+                <option value="floyd">Floyd–Steinberg</option>
+              </select>
+            </div>
+          )}
         </div>
 
         <button
@@ -222,23 +365,73 @@ function ImageImporter({ onApply, palette = PALETTE }) {
         </button>
       </div>
 
-      {/* preview */}
-      <div className="px-panel px-panel--pad stack">
+      <div className="px-panel px-panel--pad stack trace-preview-panel">
         <h3 className="px-panel-title">
-          <span>Preview</span>
-          {result && (
-            <span className="muted" style={{ fontWeight: 400 }}>
-              {result.filled} px
-            </span>
-          )}
+          <span>Pixel tracer</span>
+          <span className="muted" style={{ fontWeight: 400 }}>
+            {result ? result.filled.toLocaleString() + " pixels" : "preview"}
+          </span>
         </h3>
-        <canvas
-          ref={canvasRef}
-          width={PREVIEW_PX}
-          height={PREVIEW_PX}
-          className="preview-canvas pixelated"
-        />
-        {!result && <p className="muted" style={{ textAlign: "center" }}>add an image to see the pixel grid ✨</p>}
+        {result ? (
+          <>
+            <div className="trace-preview-toolbar">
+              <span className="px-label">Zoom</span>
+              <button type="button" className="trace-pill" disabled={zoom === 1} onClick={() => setZoom((value) => Math.max(1, value - 1))} aria-label="Zoom out">−</button>
+              <span className="trace-zoom-value">{zoom}×</span>
+              <button type="button" className="trace-pill" disabled={zoom === 5} onClick={() => setZoom((value) => Math.min(5, value + 1))} aria-label="Zoom in">+</button>
+              <button type="button" className="trace-pill" onClick={() => setZoom(1)}>reset</button>
+            </div>
+            <div className="trace-scroll" ref={scrollRef} role="region" aria-label="Numbered pixel tracing grid" tabIndex={0}>
+              <canvas
+                ref={canvasRef}
+                width={canvasSide}
+                height={canvasSide}
+                style={{ width: canvasSide, height: canvasSide }}
+                onPointerMove={handlePointerMove}
+                onPointerLeave={() => setHovered(null)}
+                aria-label={gridSize + " by " + gridSize + " pixel grid"}
+              />
+            </div>
+            <div className="trace-coordinate">
+              {hovered ? (
+                <>
+                  <span>Row {hovered.row}, Col {hovered.col}</span>
+                  <span className="trace-coordinate-color">
+                    {hovered.hex && <i style={{ background: hovered.hex }} />}
+                    {hovered.hex || "empty"}
+                  </span>
+                </>
+              ) : <span>Hover a square to inspect its coordinates and color</span>}
+            </div>
+            <div className="trace-preview-options">
+              <label><input type="checkbox" checked={showLines} onChange={(event) => setShowLines(event.target.checked)} /> Grid lines</label>
+              <label><input type="checkbox" checked={showCodes} onChange={(event) => setShowCodes(event.target.checked)} /> Color codes</label>
+            </div>
+            {showCodes && cellSize < 17 && <p className="trace-hint">Zoom in to display color codes inside the squares.</p>}
+            <div className="trace-export">
+              <button type="button" className="px-btn px-btn--sm px-btn--white" onClick={downloadPixelImage}>export pixel PNG</button>
+              <button type="button" className="px-btn px-btn--sm px-btn--white" onClick={() => downloadCanvas(canvasRef.current, "pixeldraw3d-trace-" + gridSize + "x" + gridSize + ".png")}>export trace grid</button>
+            </div>
+            <div className="trace-key-title">
+              <span className="px-label">Color key</span>
+              <span className="muted">{colorKey.total} used colors</span>
+            </div>
+            <div className="trace-color-key">
+              {colorKey.items.map((item) => (
+                <div className="trace-key-item" key={item.hex} title={item.count + " squares"}>
+                  <span className="trace-key-number">{item.code}</span>
+                  <span className="trace-key-swatch" style={{ background: item.hex }} />
+                  <code>{item.hex}</code>
+                </div>
+              ))}
+            </div>
+            {colorKey.total > colorKey.items.length && (
+              <p className="trace-hint">Showing the 64 most-used colors. Use palette snapping for a shorter key.</p>
+            )}
+          </>
+        ) : (
+          <div className="trace-empty">Add an image to generate its pixel tracing grid</div>
+        )}
       </div>
 
       <UpgradeDialog open={showUpgrade} onClose={() => setShowUpgrade(false)} />

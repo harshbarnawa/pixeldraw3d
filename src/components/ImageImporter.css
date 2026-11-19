@@ -1,0 +1,219 @@
+.trace-importer .trace-field {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.trace-importer .trace-select {
+  width: 100%;
+  min-height: 42px;
+  border: 2px solid var(--ink);
+  border-radius: 0;
+  background: var(--surface);
+  color: var(--ink);
+  padding: 9px 10px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.trace-importer .trace-select:focus-visible,
+.trace-importer .trace-pill:focus-visible,
+.trace-importer .trace-scroll:focus-visible {
+  outline: 3px solid #6ee7b7;
+  outline-offset: 2px;
+}
+
+.trace-importer .trace-sizes,
+.trace-importer .trace-preview-toolbar,
+.trace-importer .trace-preview-options,
+.trace-importer .trace-export {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.trace-importer .trace-sizes {
+  margin-top: 10px;
+}
+
+.trace-importer .trace-pill {
+  border: 2px solid var(--ink);
+  background: var(--surface);
+  color: var(--ink);
+  padding: 5px 8px;
+  min-height: 30px;
+  font-family: var(--font-head);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.trace-importer .trace-pill--active {
+  background: var(--ink);
+  color: #fff;
+}
+
+.trace-importer .trace-pill:disabled {
+  opacity: .45;
+  cursor: default;
+}
+
+.trace-importer .trace-error {
+  color: #d21b45;
+  font-size: 12px;
+  margin: 0;
+}
+
+.trace-importer .trace-hint {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  margin: 0;
+}
+
+.trace-importer .trace-preview-panel {
+  min-width: 0;
+}
+
+.trace-importer .trace-zoom-value {
+  min-width: 30px;
+  text-align: center;
+  font-family: var(--font-head);
+  font-size: 12px;
+}
+
+.trace-importer .trace-scroll {
+  width: 100%;
+  max-width: 100%;
+  max-height: 440px;
+  overflow: auto;
+  border: 3px solid var(--ink);
+  background: var(--surface-2);
+  scrollbar-width: thin;
+  overscroll-behavior: contain;
+}
+
+.trace-importer .trace-scroll canvas {
+  display: block;
+  max-width: none;
+  image-rendering: pixelated;
+  cursor: crosshair;
+}
+
+.trace-importer .trace-coordinate {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--ink-soft);
+  font-family: monospace;
+  font-size: 11px;
+  min-height: 18px;
+}
+
+.trace-importer .trace-coordinate-color {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.trace-importer .trace-coordinate-color i {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  border: 1px solid var(--ink);
+}
+
+.trace-importer .trace-preview-options {
+  gap: 12px;
+}
+
+.trace-importer .trace-preview-options label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.trace-importer .trace-preview-options input {
+  accent-color: #4a3b5c;
+  width: 15px;
+  height: 15px;
+}
+
+.trace-importer .trace-key-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.trace-importer .trace-key-title .muted {
+  font-size: 11px;
+}
+
+.trace-importer .trace-color-key {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.trace-importer .trace-key-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  border: 1px solid var(--shadow);
+  background: var(--surface);
+  padding: 6px;
+  font-size: 10px;
+}
+
+.trace-importer .trace-key-number {
+  flex: 0 0 20px;
+  font-family: monospace;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.trace-importer .trace-key-swatch {
+  flex: 0 0 18px;
+  height: 18px;
+  border: 1px solid var(--ink);
+}
+
+.trace-importer .trace-key-item code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  color: var(--ink);
+}
+
+.trace-importer .trace-empty {
+  min-height: 280px;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  text-align: center;
+  color: var(--ink-soft);
+  background: var(--surface-2);
+  border: 3px dashed var(--ink);
+  font-size: 12px;
+}
+
+@media (max-width: 520px) {
+  .trace-importer .trace-color-key {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .trace-importer .trace-scroll {
+    max-height: 350px;
+  }
+}
