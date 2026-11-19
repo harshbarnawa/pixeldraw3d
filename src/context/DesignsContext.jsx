@@ -118,10 +118,12 @@ export function DesignsProvider({ children }) {
       } else {
         try {
           await insertCloudDesign(design)
-          await addCloudVersion(design, now)
+          await addCloudVersion(design, now).catch(() => {})
           bumpProfileCounter(designsRef.current.length)
         } catch (e) {
           console.error("cloud save failed:", e.message)
+          designsRef.current = designsRef.current.filter((item) => item.id !== design.id)
+          setDesigns(designsRef.current)
           return { ok: false, reason: "error" }
         }
       }
@@ -146,6 +148,8 @@ export function DesignsProvider({ children }) {
           if (createVersion) await addCloudVersionSnapshot(updated)
         } catch (e) {
           console.error("cloud update failed:", e.message)
+          designsRef.current = sortRecent([current, ...designsRef.current.filter((item) => item.id !== id)])
+          setDesigns(designsRef.current)
           return { ok: false, reason: "error" }
         }
       }
@@ -172,6 +176,8 @@ export function DesignsProvider({ children }) {
           await renameCloudDesign(id, trimmed)
         } catch (e) {
           console.error("cloud rename failed:", e.message)
+          designsRef.current = sortRecent([current, ...designsRef.current.filter((item) => item.id !== id)])
+          setDesigns(designsRef.current)
           return { ok: false, reason: "error" }
         }
       }
@@ -188,7 +194,7 @@ export function DesignsProvider({ children }) {
         return { ok: false, reason: "quota" }
       }
       const now = new Date().toISOString()
-      const dup = { ...src, id: createId(), name: `${src.name} copy`, createdAt: now, updatedAt: now }
+      const dup = { ...src, id: createId(), name: `${src.name} copy`, isPublic: false, createdAt: now, updatedAt: now }
       designsRef.current = sortRecent([dup, ...designsRef.current])
       setDesigns(designsRef.current)
 
@@ -197,10 +203,12 @@ export function DesignsProvider({ children }) {
       } else {
         try {
           await insertCloudDesign(dup)
-          await addCloudVersion(dup, now)
+          await addCloudVersion(dup, now).catch(() => {})
           bumpProfileCounter(designsRef.current.length)
         } catch (e) {
           console.error("cloud duplicate failed:", e.message)
+          designsRef.current = designsRef.current.filter((item) => item.id !== dup.id)
+          setDesigns(designsRef.current)
           return { ok: false, reason: "error" }
         }
       }
@@ -211,6 +219,8 @@ export function DesignsProvider({ children }) {
 
   const deleteDesign = useCallback(
     async (id) => {
+      const original = designsRef.current.find((item) => item.id === id)
+      if (!original) return { ok: false, reason: "not-found" }
       designsRef.current = designsRef.current.filter((d) => d.id !== id)
       setDesigns(designsRef.current)
 
@@ -222,6 +232,8 @@ export function DesignsProvider({ children }) {
           bumpProfileCounter(designsRef.current.length)
         } catch (e) {
           console.error("cloud delete failed:", e.message)
+          designsRef.current = sortRecent([original, ...designsRef.current])
+          setDesigns(designsRef.current)
           return { ok: false, reason: "error" }
         }
       }

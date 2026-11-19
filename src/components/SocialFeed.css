@@ -1,0 +1,312 @@
+.social-page {
+  width: min(100%, 680px);
+  margin: 0 auto;
+}
+
+.social-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  margin: 0 auto 28px;
+  max-width: 610px;
+}
+
+.social-post {
+  overflow: hidden;
+  background: var(--surface);
+  border: 3px solid var(--ink);
+  box-shadow: 6px 6px 0 var(--shadow);
+}
+
+.social-post-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 15px;
+}
+
+.social-post-user {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: var(--ink);
+  min-width: 0;
+  flex: 1;
+}
+
+.social-author-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.social-author-text strong,
+.social-author-text small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.social-author-text small {
+  color: var(--ink-soft);
+  font-size: 11px;
+}
+
+.social-delete {
+  background: none;
+  color: var(--ink-soft);
+  border: none;
+  text-decoration: underline;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.social-art {
+  display: block;
+  aspect-ratio: 1;
+  width: 100%;
+  overflow: hidden;
+  background-color: var(--surface-2);
+  background-image: linear-gradient(45deg, rgba(127,127,127,.10) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(127,127,127,.10) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(127,127,127,.10) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(127,127,127,.10) 75%);
+  background-size: 24px 24px;
+  background-position: 0 0, 0 12px, 12px -12px, -12px 0;
+  border-top: 2px solid var(--ink);
+  border-bottom: 2px solid var(--ink);
+}
+
+.social-art-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+
+.social-post-content {
+  padding: 12px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.social-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}
+
+.social-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: none;
+  background: none;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  padding: 7px 8px;
+  cursor: pointer;
+}
+
+.social-action span:first-child {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.social-action--liked {
+  color: #e11d48;
+}
+
+.social-action:hover,
+.social-action:focus-visible {
+  background: var(--surface-2);
+}
+
+.social-counts {
+  display: flex;
+  gap: 13px;
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.social-counts a {
+  color: var(--ink-soft);
+  text-decoration: none;
+}
+
+.social-design-name {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.social-design-name a,
+.social-open-design {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.social-design-name a:hover,
+.social-open-design:hover {
+  text-decoration: underline;
+}
+
+.social-caption {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.social-caption-clamped {
+  display: inline;
+}
+
+.social-caption button {
+  font: inherit;
+  border: 0;
+  color: var(--ink-soft);
+  background: none;
+  padding: 0 3px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.social-open-design {
+  display: inline-block;
+  color: var(--ink-soft);
+  font-size: 12px;
+  align-self: flex-start;
+  margin-top: 3px;
+}
+
+.social-feed-tabs {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  align-items: center;
+}
+
+.social-feed-tabs .px-btn {
+  text-decoration: none;
+}
+
+.social-feed-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.social-feed-toolbar .muted {
+  font-size: 13px;
+}
+
+.social-empty {
+  text-align: center;
+  padding: 50px 24px;
+}
+
+.social-profile {
+  width: min(100%, 680px);
+  margin: 0 auto;
+}
+
+.social-profile .profile-head {
+  margin-bottom: 22px;
+}
+
+.social-profile-title {
+  margin: 2px 0 0;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.social-detail {
+  width: min(100%, 760px);
+  margin: 0 auto;
+}
+
+.social-detail-art {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  max-height: 720px;
+  background: var(--surface-2);
+  border: 2px solid var(--ink);
+  overflow: hidden;
+}
+
+.social-detail-art canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: pixelated;
+}
+
+.social-detail-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+
+.social-detail-3d {
+  width: 100%;
+  height: min(65vw, 550px);
+  min-height: 320px;
+  border: 2px solid var(--ink);
+  overflow: hidden;
+  position: relative;
+}
+
+.social-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  align-items: center;
+}
+
+.social-detail-creator {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  text-decoration: none;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.social-detail .comment-form .text-input {
+  font-size: 14px;
+}
+
+.social-detail .comment-list {
+  max-height: 520px;
+  overflow-y: auto;
+}
+
+.social-error {
+  color: #b91c1c;
+  font-size: 13px;
+}
+
+@media (max-width: 580px) {
+  .social-post-header { padding: 10px 11px; }
+  .social-post-content { padding: 9px 11px 12px; }
+  .social-action { padding: 6px 5px; }
+  .social-feed { gap: 14px; }
+  .social-detail-3d { min-height: 270px; }
+  .social-profile .profile-head { padding: 14px; }
+}

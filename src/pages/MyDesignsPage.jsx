@@ -14,7 +14,8 @@ import { useDesigns } from "../context/DesignsContext.jsx"
 import { useAuth } from "../context/AuthContext.jsx"
 import { saveWorkspace } from "../lib/storage.js"
 import { setDesignPublic } from "../lib/cloudDesigns.js"
-import { createPost, deletePostByDesign } from "../lib/community.js"
+import { createPost, deletePostByDesign, recordShare } from "../lib/community.js"
+import { copyDesignLink } from "../lib/share.js"
 
 const SORTS = {
   recent: (a, b) => String(b.updatedAt ?? "").localeCompare(String(a.updatedAt ?? "")),
@@ -93,9 +94,16 @@ function MyDesignsInner() {
     showToast(`restored “${design.name}”`)
   }
 
-  // Share flow: clicking the button on a private design opens the publish
-  // dialog (design + quote → community post). Clicking it on a public design
-  // unsets it back to private and removes the post.
+  const handleShare = async (design) => {
+    if (!design.isPublic) {
+      setPublishFor(design)
+      return
+    }
+    const result = await copyDesignLink(design.id)
+    showToast(result.copied ? "design link copied" : "copy this link: " + result.url)
+    if (result.copied) recordShare(design.id).catch(() => {})
+  }
+
   const handleTogglePublic = (design) => {
     if (design.isPublic) {
       setPublicOverride((o) => ({ ...o, [design.id]: false }))
@@ -117,10 +125,17 @@ function MyDesignsInner() {
     try {
       const d = publishFor
       await setDesignPublic(d.id, true)
-      await createPost({ body: quote, designId: d.id })
-      setPublicOverride((o) => ({ ...o, [d.id]: true }))
+      try {
+        await createPost({ body: quote, designId: d.id })
+      } catch (error) {
+        await setDesignPublic(d.id, false).catch(() => {})
+        throw error
+      }
+      setPublicOverride((previous) => ({ ...previous, [d.id]: true }))
       setPublishFor(null)
-      showToast(quote ? "posted to the community ✨" : "shared to the community ✨")
+      const link = await copyDesignLink(d.id)
+      showToast(link.copied ? "published · design link copied" : "published · copy this link: " + link.url)
+      if (link.copied) recordShare(d.id).catch(() => {})
     } catch (e) {
       showToast(e.message)
     } finally {
@@ -179,6 +194,7 @@ function MyDesignsInner() {
                 onDelete={handleDelete}
                 onOpenVersions={isCloud ? (design) => setVersionsFor(design) : undefined}
                 onTogglePublic={isCloud ? handleTogglePublic : undefined}
+                onShare={isCloud ? handleShare : undefined}
               />
             ))}
           </div>

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react"
+import { Link } from "react-router-dom"
 import { renderGridToCanvas } from "../lib/imageToPixel.js"
 
 const THUMB_PX = 96
@@ -31,7 +32,7 @@ function downloadDesign(design) {
 
 // Design tile with load / rename / dup / versions / export / delete.
 // onOpenVersions is optional — pass it to show the cloud version-history button.
-export default function DesignCard({ design, onLoad, onRename, onDuplicate, onDelete, onOpenVersions, onTogglePublic }) {
+export default function DesignCard({ design, onLoad, onRename, onDuplicate, onDelete, onOpenVersions, onTogglePublic, onShare }) {
   const canvasRef = useRef(null)
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(design.name)
@@ -106,11 +107,21 @@ export default function DesignCard({ design, onLoad, onRename, onDuplicate, onDe
           {onTogglePublic && design.isPublic !== undefined && (
             <button
               className={`px-btn px-btn--sm ${design.isPublic ? "px-btn--mint" : "px-btn--white"}`}
-              title={design.isPublic ? "set back to private" : "share with the community"}
+              title={design.isPublic ? "Unpublish this design" : "Publish to the community"}
               onClick={() => onTogglePublic(design)}
             >
-              {design.isPublic ? "public ✓" : "share ↗"}
+              {design.isPublic ? "unpublish" : "publish"}
             </button>
+          )}
+          {design.isPublic && onShare && (
+            <button className="px-btn px-btn--sm px-btn--white" onClick={() => onShare(design)} title="Copy shareable design link">
+              ↗ copy link
+            </button>
+          )}
+          {design.isPublic && (
+            <Link to={"/d/" + design.id} className="px-btn px-btn--sm px-btn--white" title="Open public artwork page">
+              view
+            </Link>
           )}
           <button className="px-btn px-btn--sm px-btn--peach" onClick={() => onDelete(design.id)}>
             ✕

@@ -7,6 +7,8 @@ export default function PublishDialog({ design, busy, onClose, onPublish }) {
   const canvasRef = useRef(null)
   const [quote, setQuote] = useState("")
 
+  useEffect(() => { setQuote("") }, [design?.id])
+
   // design is null until the dialog is opened — the optional chaining keeps the
   // dependency array from dereferencing null (which would crash every mount).
   useEffect(() => {

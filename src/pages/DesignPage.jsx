@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 import PageShell from "../components/PageShell.jsx"
 import VoxelViewport from "../components/VoxelViewport.jsx"
+import { renderGridToCanvas } from "../lib/imageToPixel.js"
+import { copyDesignLink } from "../lib/share.js"
 import { useToast } from "../components/useToast.js"
 import { useAuth } from "../context/AuthContext.jsx"
 import { supabase } from "../lib/supabase.js"
+import "../components/SocialFeed.css"
 import {
   addComment,
   deleteComment,
@@ -16,129 +19,129 @@ import {
   unlikeDesign,
 } from "../lib/community.js"
 
-const fmtDate = (d) =>
-  d ? new Date(d).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : ""
+const displayDate = (value) => value
+  ? new Date(value).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
+  : ""
 
 export default function DesignPage() {
   const { id } = useParams()
   const { user, profile } = useAuth()
   const navigate = useNavigate()
-  const { showToast } = useToast()
-
+  const { toast, showToast } = useToast()
+  const previewRef = useRef(null)
+  const likeBusy = useRef(false)
+  const [view, setView] = useState("pixel")
   const [design, setDesign] = useState(null)
   const [liked, setLiked] = useState(false)
   const [comments, setComments] = useState([])
   const [commentText, setCommentText] = useState("")
   const [posting, setPosting] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
   const [notFound, setNotFound] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
+    setError("")
+    setNotFound(false)
     try {
-      const d = await fetchPublicDesignById(id)
-      setDesign(d)
-      if (!d) {
+      const next = await fetchPublicDesignById(id)
+      setDesign(next)
+      if (!next) {
         setNotFound(true)
         return
       }
-      setComments(await fetchComments(id))
-      if (user) setLiked((await fetchLikedDesignIds(user.id)).has(id))
+      const [messages, likes] = await Promise.all([
+        fetchComments(id).catch(() => []),
+        user ? fetchLikedDesignIds(user.id).catch(() => new Set()) : Promise.resolve(new Set()),
+      ])
+      setComments(messages)
+      setLiked(likes.has(id))
     } catch (e) {
-      showToast(e.message)
+      setError(e.message || "Could not open this design")
     } finally {
       setLoading(false)
     }
-  }, [id, user, showToast])
+  }, [id, user?.id])
+
+  useEffect(() => { load() }, [load])
 
   useEffect(() => {
-    load()
-  }, [load])
-
-  // Realtime: fresh like counts + live comments for this design.
-  useEffect(() => {
-    if (!design) return
-    const channel = supabase
-      .channel(`design:${id}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "post_likes", filter: `design_id=eq.${id}` },
-        () => {
-          fetchPublicDesignById(id)
-            .then((d) => d && setDesign(d))
-            .catch(() => {})
-        },
-      )
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "post_comments", filter: `design_id=eq.${id}` },
-        async () => {
-          // refetch so the new comment arrives with its author's profile, and
-          // take the count from the server (assignment, not increment, so the
-          // poster's own optimistic bump can't double-count)
-          setComments(await fetchComments(id).catch(() => []))
-          fetchPublicDesignById(id)
-            .then((d) => d && setDesign(d))
-            .catch(() => {})
-        },
-      )
-      .subscribe()
-    return () => {
-      supabase.removeChannel(channel)
+    if (view === "pixel" && design?.grid?.length && previewRef.current) {
+      renderGridToCanvas(previewRef.current, design.grid)
     }
+  }, [design?.grid, view])
+
+  useEffect(() => {
+    if (!supabase || !design?.id) return
+    const channel = supabase.channel("design-social-" + id)
+      .on("postgres_changes", {
+        event: "*", schema: "public", table: "post_likes", filter: "design_id=eq." + id,
+      }, () => {
+        fetchPublicDesignById(id).then((next) => next && setDesign(next)).catch(() => {})
+      })
+      .on("postgres_changes", {
+        event: "*", schema: "public", table: "post_comments", filter: "design_id=eq." + id,
+      }, () => {
+        fetchComments(id).then(setComments).catch(() => {})
+        fetchPublicDesignById(id).then((next) => next && setDesign(next)).catch(() => {})
+      }).subscribe()
+    return () => { supabase.removeChannel(channel) }
   }, [design?.id, id])
 
   const toggleLike = async () => {
-    if (!user) {
-      showToast("sign in to like")
-      return
-    }
-    const next = !liked
-    setLiked(next)
-    setDesign((d) => (d ? { ...d, likeCount: Math.max(0, d.likeCount + (next ? 1 : -1)) } : d))
+    if (!user) return showToast("sign in to like")
+    if (likeBusy.current) return
+    likeBusy.current = true
+    const previous = liked
+    setLiked(!previous)
+    setDesign((item) => item ? {
+      ...item,
+      likeCount: Math.max(0, (item.likeCount ?? 0) + (previous ? -1 : 1)),
+    } : item)
     try {
-      if (next) await likeDesign(id)
-      else await unlikeDesign(id)
+      if (previous) await unlikeDesign(id)
+      else await likeDesign(id)
     } catch (e) {
-      setLiked(!next)
-      setDesign((d) => (d ? { ...d, likeCount: Math.max(0, d.likeCount + (next ? -1 : 1)) } : d))
-      showToast(e.message)
+      setLiked(previous)
+      setDesign((item) => item ? {
+        ...item,
+        likeCount: Math.max(0, (item.likeCount ?? 0) + (previous ? 1 : -1)),
+      } : item)
+      showToast(e.message || "Couldn't update like")
+    } finally {
+      likeBusy.current = false
     }
   }
 
-  const handleShare = async () => {
-    const url = `${window.location.origin}/d/${id}`
-    try {
-      await navigator.clipboard.writeText(url)
-      showToast("link copied")
-    } catch {
-      showToast(url)
-    }
-    if (user) recordShare(id).catch(() => {})
+  const share = async () => {
+    const result = await copyDesignLink(id)
+    showToast(result.copied ? "design link copied" : "copy this link: " + result.url)
+    if (result.copied && user) recordShare(id).catch(() => {})
   }
 
-  const postComment = async (e) => {
-    e.preventDefault()
+  const submitComment = async (event) => {
+    event.preventDefault()
     const body = commentText.trim()
-    if (!body) {
-      showToast("write a comment")
-      return
-    }
-    if (!user) {
-      showToast("sign in to comment")
-      return
-    }
+    if (!body) return
+    if (!user) return showToast("sign in to comment")
+    if (posting) return
     setPosting(true)
     try {
-      const c = await addComment(id, body)
-      setComments((prev) => [
-        ...prev,
-        { ...c, profiles: { username: profile?.username, display_name: profile?.display_name, profile_photo: profile?.profile_photo } },
-      ])
-      setDesign((d) => (d ? { ...d, commentCount: d.commentCount + 1 } : d))
+      const saved = await addComment(id, body)
+      setComments((previous) => [...previous, {
+        ...saved,
+        profiles: {
+          username: profile?.username,
+          display_name: profile?.display_name,
+          profile_photo: profile?.profile_photo,
+        },
+      }])
+      setDesign((item) => item ? { ...item, commentCount: (item.commentCount ?? 0) + 1 } : item)
       setCommentText("")
+      showToast("comment added")
     } catch (e) {
-      showToast(e.message)
+      showToast(e.message || "Couldn't post comment")
     } finally {
       setPosting(false)
     }
@@ -147,130 +150,113 @@ export default function DesignPage() {
   const removeComment = async (commentId) => {
     try {
       await deleteComment(commentId)
-      setComments((prev) => prev.filter((c) => c.id !== commentId))
-      setDesign((d) => (d ? { ...d, commentCount: Math.max(0, d.commentCount - 1) } : d))
+      setComments((previous) => previous.filter((item) => item.id !== commentId))
+      setDesign((item) => item ? { ...item, commentCount: Math.max(0, (item.commentCount ?? 0) - 1) } : item)
+      showToast("comment deleted")
     } catch (e) {
-      showToast(e.message)
+      showToast(e.message || "Couldn't delete comment")
     }
   }
 
-  if (loading) {
-    return (
-      <PageShell>
-        <div className="px-page">
-          <p className="muted">loading design…</p>
-        </div>
-      </PageShell>
-    )
-  }
+  if (loading) return (
+    <PageShell><div className="px-page social-detail"><p className="muted">loading design…</p></div></PageShell>
+  )
 
-  if (notFound || !design) {
-    return (
-      <PageShell>
-        <div className="px-page">
-          <div className="px-panel px-panel--pad comm-empty">
-            <p style={{ fontSize: 30, margin: 0 }}>🧊</p>
-            <p className="muted" style={{ margin: "6px 0 0" }}>
-              this design is private or doesn't exist.
-            </p>
-          </div>
+  if (!design || notFound) return (
+    <PageShell>
+      <div className="px-page social-detail">
+        <div className="px-panel px-panel--pad social-empty">
+          <p className="muted">{error || "This design is private, unavailable or has been deleted."}</p>
+          {error && <button type="button" className="px-btn px-btn--sm px-btn--white" onClick={load}>retry</button>}
+          <Link to="/community?tab=explore" className="px-btn px-btn--sm px-btn--mint">back to explore</Link>
         </div>
-      </PageShell>
-    )
-  }
+      </div>
+    </PageShell>
+  )
 
   const creator = design.creator
+  const authorName = creator?.displayName || creator?.username || "creator"
+  const avatar = creator?.profilePhoto ? (
+    <img src={creator.profilePhoto} className="comm-avatar" alt="" />
+  ) : (
+    <span className="comm-avatar comm-avatar--none">{authorName.slice(0, 1).toUpperCase()}</span>
+  )
 
   return (
     <PageShell>
-      <div className="px-page">
+      <div className="px-page social-detail">
         <div className="design-page">
-          <div className="px-panel px-panel--pad design-page-main">
-            <h1 className="px-section-title" style={{ margin: "0 0 14px" }}>
-              {design.name}
-            </h1>
-            <div className="design-viewport">
-              <VoxelViewport
-                grid={design.grid}
-                size={design.size}
-                extrude={design.extrude}
-                randomLift={design.randomLift}
-                showGrid={false}
-                autoRotate
-              />
+          <section className="px-panel px-panel--pad design-page-main">
+            {creator?.username && (
+              <Link className="social-detail-creator" to={"/u/" + creator.username}>
+                {avatar}<strong>{authorName}</strong>
+              </Link>
+            )}
+            <h1 className="px-section-title" style={{ margin: 0 }}>{design.name}</h1>
+            <div className="social-detail-switch">
+              <button type="button" className={"px-btn px-btn--sm " + (view === "pixel" ? "px-btn--active" : "px-btn--white")} onClick={() => setView("pixel")}>2D artwork</button>
+              <button type="button" className={"px-btn px-btn--sm " + (view === "3d" ? "px-btn--active" : "px-btn--white")} onClick={() => setView("3d")}>3D model</button>
+              <span className="muted">{design.size}×{design.size}</span>
             </div>
-            <div className="design-actions">
-              <button
-                type="button"
-                className={`px-btn px-btn--sm ${liked ? "px-btn--active" : "px-btn--white"}`}
-                onClick={toggleLike}
-              >
-                ♥ {design.likeCount} {liked ? "liked" : "like"}
+            {view === "pixel" ? (
+              <div className="social-detail-art">
+                <canvas ref={previewRef} width={640} height={640} aria-label={"Pixel art preview for " + design.name} />
+              </div>
+            ) : (
+              <div className="social-detail-3d">
+                <VoxelViewport
+                  grid={design.grid}
+                  size={design.size}
+                  extrude={design.extrude}
+                  randomLift={design.randomLift}
+                  showGrid={false}
+                  autoRotate
+                />
+              </div>
+            )}
+            <div className="social-detail-actions">
+              <button type="button" className={"px-btn px-btn--sm " + (liked ? "px-btn--active" : "px-btn--white")} onClick={toggleLike}>
+                {liked ? "♥ liked" : "♡ like"} · {design.likeCount ?? 0}
               </button>
-              <button type="button" className="px-btn px-btn--sm px-btn--white" onClick={handleShare}>
-                ↗ share
-              </button>
-              <button type="button" className="px-btn px-btn--sm px-btn--mint" onClick={() => navigate(`/?remix=${id}`)}>
-                ⟲ remix
-              </button>
-              {creator && (
-                <Link to={`/u/${creator.username}`} className="comm-creator design-creator">
-                  {creator.profilePhoto ? (
-                    <img src={creator.profilePhoto} alt="" className="comm-avatar" />
-                  ) : (
-                    <span className="comm-avatar comm-avatar--none">
-                      {(creator.displayName || creator.username || "u").slice(0, 1).toUpperCase()}
-                    </span>
-                  )}
-                  <span className="comm-creator-name">{creator.displayName || creator.username}</span>
-                </Link>
-              )}
+              <a className="px-btn px-btn--sm px-btn--white" href="#comments">comments · {design.commentCount ?? 0}</a>
+              <button type="button" className="px-btn px-btn--sm px-btn--white" onClick={share}>↗ copy link</button>
+              <button type="button" className="px-btn px-btn--sm px-btn--mint" onClick={() => navigate("/?remix=" + id)}>remix artwork</button>
             </div>
-          </div>
+            <p className="muted" style={{ fontSize: 12, margin: 0 }}>Published {displayDate(design.createdAt)} · {design.shareCount ?? 0} shares</p>
+          </section>
 
-          <div className="px-panel px-panel--pad comments-panel">
-            <h3 className="px-panel-title">
-              <span>comments ({design.commentCount})</span>
-            </h3>
-
-            <form className="comment-form" onSubmit={postComment}>
+          <section className="px-panel px-panel--pad comments-panel" id="comments">
+            <h2 className="px-panel-title">comments ({design.commentCount ?? 0})</h2>
+            <form className="comment-form" onSubmit={submitComment}>
               <input
                 className="text-input"
-                placeholder={user ? "say something nice…" : "sign in to comment"}
+                placeholder={user ? "Write a comment…" : "Sign in to comment"}
                 value={commentText}
-                disabled={!user}
-                onChange={(e) => setCommentText(e.target.value)}
+                maxLength={500}
+                disabled={!user || posting}
+                onChange={(event) => setCommentText(event.target.value)}
               />
-              <button type="submit" className="px-btn px-btn--sm px-btn--mint" disabled={posting || !user}>
+              <button className="px-btn px-btn--sm px-btn--mint" type="submit" disabled={!user || posting || !commentText.trim()}>
                 {posting ? "posting…" : "post"}
               </button>
             </form>
-
-            {comments.length === 0 ? (
-              <p className="muted">no comments yet — be the first.</p>
-            ) : (
+            {!comments.length ? <p className="muted">No comments yet. Start the conversation.</p> : (
               <ul className="comment-list">
-                {comments.map((c) => {
-                  const author = c.profiles
+                {comments.map((comment) => {
+                  const author = comment.profiles
                   return (
-                    <li key={c.id}>
-                      <Link to={`/u/${author?.username}`} className="comm-creator">
-                        {author?.profile_photo ? (
-                          <img src={author.profile_photo} alt="" className="comm-avatar comm-avatar--sm" />
-                        ) : (
-                          <span className="comm-avatar comm-avatar--none comm-avatar--sm">
-                            {(author?.display_name || author?.username || "u").slice(0, 1).toUpperCase()}
-                          </span>
-                        )}
-                        <span className="comm-creator-name">{author?.display_name || author?.username || "user"}</span>
-                      </Link>
-                      <p className="comment-body">{c.body}</p>
+                    <li key={comment.id}>
+                      <div className="comm-creator">
+                        <span className="comm-avatar comm-avatar--none comm-avatar--sm">{(author?.display_name || author?.username || "u").slice(0, 1).toUpperCase()}</span>
+                        {author?.username ? (
+                          <Link to={"/u/" + author.username} className="comm-creator-name">{author.display_name || author.username}</Link>
+                        ) : <strong>{author?.display_name || "user"}</strong>}
+                      </div>
+                      <p className="comment-body">{comment.body}</p>
                       <div className="comment-foot">
-                        <span className="muted">{fmtDate(c.created_at)}</span>
-                        {user?.id === c.user_id && (
-                          <button type="button" className="link-danger" onClick={() => removeComment(c.id)}>
-                            delete
-                          </button>
+                        <span className="muted">{displayDate(comment.created_at)}</span>
+                        {user?.id === comment.user_id && (
+                          <button className="link-danger" onClick={() => removeComment(comment.id)} type="button">delete</button>
                         )}
                       </div>
                     </li>
@@ -278,8 +264,9 @@ export default function DesignPage() {
                 })}
               </ul>
             )}
-          </div>
+          </section>
         </div>
+        {toast && <div className="px-toast" role="status">{toast}</div>}
       </div>
     </PageShell>
   )

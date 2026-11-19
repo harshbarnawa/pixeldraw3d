@@ -1,184 +1,223 @@
-import { useCallback, useEffect, useState } from "react"
-import { Link } from "react-router-dom"
+import { useCallback, useEffect, useRef, useState } from "react"
+import { Link, useSearchParams } from "react-router-dom"
 import PageShell from "../components/PageShell.jsx"
 import SectionHead from "../components/SectionHead.jsx"
 import PostCard from "../components/PostCard.jsx"
 import { useToast } from "../components/useToast.js"
 import { useAuth } from "../context/AuthContext.jsx"
 import { supabase } from "../lib/supabase.js"
+import { copyDesignLink } from "../lib/share.js"
 import {
+  asDesignPost,
   deletePost,
+  fetchLikedDesignIds,
   fetchLikedPostIds,
+  fetchPublicDesigns,
   fetchPublicPosts,
+  likeDesign,
   likePost,
   recordShare,
   searchUsers,
+  unlikeDesign,
   unlikePost,
 } from "../lib/community.js"
 
-const SORTS = ["explore", "trending", "recent"]
-
 export default function CommunityPage() {
   const { user } = useAuth()
-  const { showToast } = useToast()
-
-  const [sort, setSort] = useState("explore")
+  const { toast, showToast } = useToast()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tab = searchParams.get("tab") === "explore" ? "explore" : "feed"
+  const [sort, setSort] = useState("recent")
   const [posts, setPosts] = useState([])
+  const [likedDesignIds, setLikedDesignIds] = useState(new Set())
   const [likedPostIds, setLikedPostIds] = useState(new Set())
   const [loading, setLoading] = useState(true)
-
+  const [error, setError] = useState("")
   const [term, setTerm] = useState("")
   const [results, setResults] = useState([])
   const [searching, setSearching] = useState(false)
+  const busyLikes = useRef(new Set())
 
-  useEffect(() => {
-    if (user) fetchLikedPostIds(user.id).then(setLikedPostIds).catch(() => {})
-    else setLikedPostIds(new Set())
-  }, [user])
-
-  const load = useCallback(async () => {
-    setLoading(true)
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true)
     try {
-      setPosts(await fetchPublicPosts({ sort }))
+      const next = tab === "explore"
+        ? (await fetchPublicDesigns({ sort: sort === "trending" ? "popular" : "recent" })).map(asDesignPost)
+        : await fetchPublicPosts({ sort })
+      setPosts(next)
+      setError("")
     } catch (e) {
-      showToast(e.message)
+      setError(e.message || "Couldn't load the community")
+      if (!silent) setPosts([])
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
-  }, [sort, showToast])
+  }, [tab, sort])
 
   useEffect(() => {
     load()
   }, [load])
 
-  // Realtime: new posts stream into the feed.
   useEffect(() => {
-    const channel = supabase
-      .channel("community-posts")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "posts" }, () => load())
-      .subscribe()
-    return () => {
-      supabase.removeChannel(channel)
+    let active = true
+    if (!user) {
+      setLikedDesignIds(new Set())
+      setLikedPostIds(new Set())
+      return
     }
-  }, [load])
+    Promise.all([fetchLikedDesignIds(user.id), fetchLikedPostIds(user.id)])
+      .then(([designIds, postIds]) => {
+        if (!active) return
+        setLikedDesignIds(designIds)
+        setLikedPostIds(postIds)
+      })
+      .catch(() => {})
+    return () => { active = false }
+  }, [user?.id])
+
+  useEffect(() => {
+    if (!supabase) return
+    const channel = supabase.channel("community-social-" + tab)
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: tab === "feed" ? "posts" : "designs",
+      }, () => load(true))
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [tab, load])
+
+  useEffect(() => {
+    if (!term.trim()) {
+      setResults([])
+      setSearching(false)
+      return
+    }
+    let alive = true
+    setSearching(true)
+    const timer = setTimeout(() => {
+      searchUsers(term)
+        .then((found) => { if (alive) setResults(found) })
+        .catch(() => { if (alive) setResults([]) })
+        .finally(() => { if (alive) setSearching(false) })
+    }, 300)
+    return () => { alive = false; clearTimeout(timer) }
+  }, [term])
 
   const toggleLike = async (post) => {
     if (!user) {
-      showToast("sign in to like")
+      showToast("sign in to like designs")
       return
     }
-    const on = likedPostIds.has(post.id)
-    setLikedPostIds((prev) => {
-      const n = new Set(prev)
-      if (on) n.delete(post.id)
-      else n.add(post.id)
-      return n
-    })
-    setPosts((prev) =>
-      prev.map((p) => (p.id === post.id ? { ...p, like_count: Math.max(0, p.like_count + (on ? -1 : 1)) } : p)),
-    )
-    try {
-      if (on) await unlikePost(post.id)
-      else await likePost(post.id)
-    } catch (e) {
-      setLikedPostIds((prev) => {
-        const n = new Set(prev)
-        if (on) n.add(post.id)
-        else n.delete(post.id)
-        return n
+    const designId = post.designs?.id || null
+    const key = designId ? "d:" + designId : "p:" + post.id
+    if (busyLikes.current.has(key)) return
+    busyLikes.current.add(key)
+
+    const current = designId ? likedDesignIds.has(designId) : likedPostIds.has(post.id)
+    const setter = designId ? setLikedDesignIds : setLikedPostIds
+    const identity = designId || post.id
+    const mutateLikes = (wasLiked) => {
+      setter((previous) => {
+        const next = new Set(previous)
+        if (wasLiked) next.delete(identity)
+        else next.add(identity)
+        return next
       })
-      setPosts((prev) =>
-        prev.map((p) => (p.id === post.id ? { ...p, like_count: Math.max(0, p.like_count + (on ? 1 : -1)) } : p)),
-      )
-      showToast(e.message)
+      const amount = wasLiked ? -1 : 1
+      setPosts((previous) => previous.map((item) => {
+        if (designId && item.designs?.id === designId) {
+          return { ...item, designs: { ...item.designs, like_count: Math.max(0, (item.designs.like_count ?? 0) + amount) } }
+        }
+        if (!designId && item.id === post.id) {
+          return { ...item, like_count: Math.max(0, (item.like_count ?? 0) + amount) }
+        }
+        return item
+      }))
     }
-  }
 
-  const removePost = async (postId) => {
+    mutateLikes(current)
     try {
-      await deletePost(postId)
-      setPosts((prev) => prev.filter((p) => p.id !== postId))
+      if (designId) {
+        if (current) await unlikeDesign(designId)
+        else await likeDesign(designId)
+      } else {
+        if (current) await unlikePost(post.id)
+        else await likePost(post.id)
+      }
     } catch (e) {
-      showToast(e.message)
-    }
-  }
-
-  const handleShare = async (post) => {
-    if (!post.designs) return
-    const url = `${window.location.origin}/d/${post.designs.id}`
-    try {
-      await navigator.clipboard.writeText(url)
-      showToast("link copied")
-    } catch {
-      showToast(url)
-    }
-    if (user) recordShare(post.designs.id).catch(() => {})
-  }
-
-  const runSearch = async (value) => {
-    setTerm(value)
-    if (!value.trim()) {
-      setResults([])
-      return
-    }
-    setSearching(true)
-    try {
-      setResults(await searchUsers(value))
-    } catch {
-      setResults([])
+      mutateLikes(!current)
+      showToast(e.message || "Couldn't update like")
     } finally {
-      setSearching(false)
+      busyLikes.current.delete(key)
     }
   }
 
-  const renderAvatar = (author) =>
-    author?.profile_photo ? (
-      <img src={author.profile_photo} alt="" className="comm-avatar comm-avatar--sm" />
-    ) : (
-      <span className="comm-avatar comm-avatar--none comm-avatar--sm">
-        {(author?.display_name || author?.username || "u").slice(0, 1).toUpperCase()}
-      </span>
-    )
+  const share = async (post) => {
+    const id = post.designs?.id
+    if (!id) return
+    const result = await copyDesignLink(id)
+    showToast(result.copied ? "design link copied" : "copy this link: " + result.url)
+    if (result.copied && user) recordShare(id).catch(() => {})
+  }
+
+  const remove = async (id) => {
+    try {
+      await deletePost(id)
+      setPosts((previous) => previous.filter((post) => post.id !== id))
+      showToast("post deleted")
+    } catch (e) {
+      showToast(e.message || "Couldn't delete the post")
+    }
+  }
+
+  const setTab = (next) => {
+    setSort("recent")
+    setSearchParams(next === "explore" ? { tab: "explore" } : {})
+  }
+
+  const renderAvatar = (author) => author.profile_photo ? (
+    <img src={author.profile_photo} alt="" className="comm-avatar" />
+  ) : (
+    <span className="comm-avatar comm-avatar--none">
+      {(author.display_name || author.username || "u").slice(0, 1).toUpperCase()}
+    </span>
+  )
 
   return (
     <PageShell>
-      <div className="px-page">
-        <SectionHead kicker="06 · community" title="explore" sub="designs and words shared by the community." />
+      <div className="px-page social-page">
+        <SectionHead kicker="06 · community" title={tab} sub={tab === "feed" ? "New posts and artwork shared by the community." : "Discover every public pixel design."} />
 
-        {/* ----- user search ----- */}
-        <form
-          className="comm-search-bar"
-          onSubmit={(e) => {
-            e.preventDefault()
-            runSearch(term)
-          }}
-        >
+        <div className="social-feed-tabs">
+          <button type="button" className={"px-btn px-btn--sm " + (tab === "feed" ? "px-btn--active" : "px-btn--white")} onClick={() => setTab("feed")}>feed</button>
+          <button type="button" className={"px-btn px-btn--sm " + (tab === "explore" ? "px-btn--active" : "px-btn--white")} onClick={() => setTab("explore")}>explore</button>
+          <button type="button" className={"px-btn px-btn--sm " + (sort === "trending" ? "px-btn--active" : "px-btn--white")} onClick={() => setSort((value) => value === "trending" ? "recent" : "trending")}>popular</button>
+          <button type="button" className="px-btn px-btn--sm px-btn--white" onClick={() => load()} aria-label="Refresh posts">refresh</button>
+        </div>
+
+        <div className="comm-search-bar">
           <input
             className="text-input comm-search"
-            placeholder="search users (username or name)…"
+            type="search"
+            placeholder="search creators..."
             value={term}
-            onChange={(e) => runSearch(e.target.value)}
+            onChange={(event) => setTerm(event.target.value)}
           />
-          <button type="submit" className="px-btn px-btn--white" disabled={!term.trim()}>
-            search
-          </button>
-        </form>
+        </div>
 
         {term.trim() && (
           <div className="px-panel px-panel--pad comm-search-results">
-            {searching ? (
-              <p className="muted">searching…</p>
-            ) : results.length === 0 ? (
-              <p className="muted">no users found for “{term}”.</p>
+            {searching ? <p className="muted">searching…</p> : results.length === 0 ? (
+              <p className="muted">no creators found</p>
             ) : (
               <ul className="user-results">
-                {results.map((u) => (
-                  <li key={u.username}>
-                    <Link to={`/u/${u.username}`} className="comm-creator">
-                      {renderAvatar(u)}
-                      <span className="comm-creator-name">{u.display_name || u.username}</span>
-                      <span className="muted">@{u.username}</span>
-                      <span className="comm-stat">♥ {u.follower_count}</span>
+                {results.map((author) => (
+                  <li key={author.username}>
+                    <Link className="comm-creator" to={"/u/" + author.username}>
+                      {renderAvatar(author)}
+                      <span className="comm-creator-name">{author.display_name || author.username}</span>
+                      <span className="muted">@{author.username}</span>
                     </Link>
                   </li>
                 ))}
@@ -187,47 +226,31 @@ export default function CommunityPage() {
           </div>
         )}
 
-        {/* ----- tabs ----- */}
-        <div className="tool-row comm-toolbar">
-          <div className="comm-tabs">
-            {SORTS.map((s) => (
-              <button
-                key={s}
-                type="button"
-                className={`px-btn px-btn--sm ${sort === s ? "px-btn--active" : "px-btn--white"}`}
-                onClick={() => setSort(s)}
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-        </div>
+        {error && <div className="px-panel px-panel--pad social-error" role="alert">{error} <button className="px-btn px-btn--sm px-btn--white" onClick={() => load()}>retry</button></div>}
 
-        {/* ----- post feed ----- */}
         {loading ? (
-          <p className="muted comm-empty">loading the feed…</p>
+          <div className="px-panel px-panel--pad social-empty"><p className="muted">loading community…</p></div>
         ) : posts.length === 0 ? (
-          <div className="px-panel px-panel--pad comm-empty">
-            <p style={{ fontSize: 30, margin: 0 }}>🧊</p>
-            <p className="muted" style={{ margin: "6px 0 0" }}>
-              nothing posted yet — make a design public to share it with the community.
-            </p>
+          <div className="px-panel px-panel--pad social-empty">
+            <p className="muted">{tab === "feed" ? "No posts yet. Explore public designs or publish your artwork." : "No public designs yet. Publish one from My Designs."}</p>
+            {tab === "feed" && <button className="px-btn px-btn--sm px-btn--mint" onClick={() => setTab("explore")}>explore designs</button>}
           </div>
         ) : (
-          <div className="post-feed">
-            {posts.map((p) => (
+          <div className="social-feed">
+            {posts.map((post) => (
               <PostCard
-                key={p.id}
-                post={p}
-                liked={likedPostIds.has(p.id)}
+                key={post.id}
+                post={post}
+                liked={post.designs ? likedDesignIds.has(post.designs.id) : likedPostIds.has(post.id)}
                 onToggleLike={toggleLike}
-                onShare={handleShare}
-                onDelete={removePost}
+                onShare={share}
+                onDelete={tab === "feed" ? remove : undefined}
                 currentUserId={user?.id}
               />
             ))}
           </div>
         )}
+        {toast && <div className="px-toast" role="status">{toast}</div>}
       </div>
     </PageShell>
   )

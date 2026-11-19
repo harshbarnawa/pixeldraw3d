@@ -205,7 +205,7 @@ export async function deleteComment(commentId) {
 
 export async function recordShare(designId) {
   const user_id = await currentUserId()
-  const { error } = await supabase.from("shares").insert({ user_id, design_id: designId })
+  const { error } = await supabase.from("shares").upsert({ user_id, design_id: designId }, { onConflict: "design_id,user_id", ignoreDuplicates: true })
   if (error) throw error
 }
 
@@ -214,11 +214,12 @@ export async function recordShare(designId) {
 const POST_FIELDS = `
   id, body, like_count, comment_count, created_at, user_id, design_id,
   profiles!posts_user_id_profiles_fk(username, display_name, profile_photo),
-  designs(id, name, grid, size, extrude, random_lift)
+  designs(id, name, grid, size, extrude, random_lift, like_count, comment_count, share_count, is_public, user_id)
 `
 
-export async function fetchPublicPosts({ sort = "explore", limit = 50 } = {}) {
+export async function fetchPublicPosts({ sort = "recent", limit = 60, userId = null } = {}) {
   let q = supabase.from("posts").select(POST_FIELDS).limit(limit)
+  if (userId) q = q.eq("user_id", userId)
   if (sort === "trending") {
     const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
     q = q.gte("created_at", cutoff).order("like_count", { ascending: false })
@@ -228,7 +229,40 @@ export async function fetchPublicPosts({ sort = "explore", limit = 50 } = {}) {
   }
   const { data, error } = await q
   if (error) throw error
-  return data ?? []
+  const visible = (data ?? []).filter((post) => !post.design_id || (post.designs && post.designs.is_public))
+  if (sort === "trending") {
+    visible.sort((a, b) => (b.designs?.like_count ?? b.like_count ?? 0) - (a.designs?.like_count ?? a.like_count ?? 0))
+  }
+  return visible
+}
+
+export function asDesignPost(design) {
+  return {
+    id: "design-" + design.id,
+    synthetic: true,
+    user_id: design.userId,
+    created_at: design.createdAt,
+    design_id: design.id,
+    like_count: design.likeCount ?? 0,
+    comment_count: design.commentCount ?? 0,
+    body: "",
+    profiles: {
+      username: design.creator?.username,
+      display_name: design.creator?.displayName,
+      profile_photo: design.creator?.profilePhoto,
+    },
+    designs: {
+      id: design.id,
+      name: design.name,
+      grid: design.grid,
+      size: design.size,
+      extrude: design.extrude,
+      random_lift: design.randomLift,
+      like_count: design.likeCount ?? 0,
+      comment_count: design.commentCount ?? 0,
+      is_public: design.isPublic,
+    },
+  }
 }
 
 // body is optional when posting a design — a design post can be quote-less.
